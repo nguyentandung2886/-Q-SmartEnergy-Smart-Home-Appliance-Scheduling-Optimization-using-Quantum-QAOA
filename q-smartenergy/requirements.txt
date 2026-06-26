@@ -1,0 +1,8 @@
+qiskit
+qiskit-optimization
+qiskit-aer
+numpy
+pandas
+matplotlib
+streamlit
+pytest
