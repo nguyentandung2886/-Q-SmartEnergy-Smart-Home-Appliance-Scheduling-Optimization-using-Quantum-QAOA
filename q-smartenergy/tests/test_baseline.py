@@ -14,10 +14,12 @@ from calc import (
     BILL_AFTER_VND,
     SAVINGS_PERCENT,
     SOLAR_CAPACITY_KWP,
+    SOLAR_MONTHLY_GENERATION_KWH,
     SELF_CONSUMPTION_BEFORE,
     SELF_CONSUMPTION_AFTER,
     EVN_TIERS,
     calculate_bill,
+    grid_purchase_kwh,
 )
 
 
@@ -110,3 +112,53 @@ class TestCalculateBill:
             prev_bill = calculate_bill(kwh)
             next_bill = calculate_bill(kwh + 10)
             assert next_bill >= prev_bill, f"Bill not monotonic: {kwh}→{kwh+10} kWh, got {prev_bill}→{next_bill}đ"
+
+
+class TestGridPurchaseKwh:
+    """Test grid_purchase_kwh() function and its integration with calculate_bill()."""
+
+    def test_grid_purchase_kwh_zero_consumption(self):
+        """Grid purchase for 0% self-consumption should equal total monthly load."""
+        result = grid_purchase_kwh(0.0)
+        expected = MONTHLY_KWH
+        assert result == expected, f"Expected {expected}, got {result}"
+
+    def test_grid_purchase_kwh_full_consumption(self):
+        """Grid purchase for 100% self-consumption should be total load minus all solar."""
+        result = grid_purchase_kwh(1.0)
+        expected = MONTHLY_KWH - SOLAR_MONTHLY_GENERATION_KWH
+        assert result == expected, f"Expected {expected}, got {result}"
+
+    def test_grid_purchase_kwh_before_scenario(self):
+        """Grid purchase for SELF_CONSUMPTION_BEFORE (30%) should equal 372.5 kWh."""
+        result = grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)
+        expected = MONTHLY_KWH - (SOLAR_MONTHLY_GENERATION_KWH * SELF_CONSUMPTION_BEFORE)
+        assert result == pytest.approx(expected), f"Expected {expected}, got {result}"
+        # Exact check: 530 - (525 * 0.30) = 530 - 157.5 = 372.5
+        assert result == pytest.approx(372.5), f"Expected 372.5, got {result}"
+
+    def test_grid_purchase_kwh_after_scenario(self):
+        """Grid purchase for SELF_CONSUMPTION_AFTER (45%) should equal 293.75 kWh."""
+        result = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
+        expected = MONTHLY_KWH - (SOLAR_MONTHLY_GENERATION_KWH * SELF_CONSUMPTION_AFTER)
+        assert result == pytest.approx(expected), f"Expected {expected}, got {result}"
+        # Exact check: 530 - (525 * 0.45) = 530 - 236.25 = 293.75
+        assert result == pytest.approx(293.75), f"Expected 293.75, got {result}"
+
+    def test_bill_before_baseline_reconciliation(self):
+        """Bill for grid_purchase_kwh(SELF_CONSUMPTION_BEFORE) must equal BILL_BEFORE_VND."""
+        grid_kwh = grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)
+        calculated_bill = calculate_bill(grid_kwh)
+        assert calculated_bill == pytest.approx(BILL_BEFORE_VND, abs=1), (
+            f"Bill mismatch: calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_BEFORE})) = {calculated_bill:.0f}đ, "
+            f"expected BILL_BEFORE_VND = {BILL_BEFORE_VND}đ"
+        )
+
+    def test_bill_after_baseline_reconciliation(self):
+        """Bill for grid_purchase_kwh(SELF_CONSUMPTION_AFTER) must equal BILL_AFTER_VND."""
+        grid_kwh = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
+        calculated_bill = calculate_bill(grid_kwh)
+        assert calculated_bill == pytest.approx(BILL_AFTER_VND, abs=1), (
+            f"Bill mismatch: calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_AFTER})) = {calculated_bill:.0f}đ, "
+            f"expected BILL_AFTER_VND = {BILL_AFTER_VND}đ"
+        )

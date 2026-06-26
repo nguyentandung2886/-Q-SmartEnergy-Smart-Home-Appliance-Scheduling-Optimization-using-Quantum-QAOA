@@ -6,10 +6,15 @@ Every other module (data_prep, qubo_builder, quantum_runner, visualizer, app) MU
 these values from here — DO NOT hard-code baseline numbers elsewhere.
 
 Baseline numbers (locked, do not alter):
-- Monthly consumption: 530 kWh/month
+- Monthly consumption: 530 kWh/month (total household load)
 - Solar capacity: 5 kWp
+- Solar monthly generation: 525 kWh/month (~105 kWh/kWp/month, realistic for Vietnam)
 - Self-consumption tiers: 30% (before optimization) → 45% (after optimization)
+  (portion of solar output directly consumed; remainder is grid-exported)
+- Grid-purchased kWh: MONTHLY_KWH - (SOLAR_MONTHLY_GENERATION_KWH * self_consumption_rate)
+  This is the portion that incurs EVN tiered pricing charges
 - Electricity bills: 896,125đ (before) → 658,125đ (after), reduction 26.6%
+  (bills calculated on grid-purchased kWh, not total consumption)
 
 EVN Tiered Pricing:
 - The pricing follows Vietnam's standard tiered electricity pricing structure (EVN sinh hoạt).
@@ -25,6 +30,7 @@ Rubric Mapping:
 # Baseline consumption and solar parameters
 MONTHLY_KWH = 530
 SOLAR_CAPACITY_KWP = 5
+SOLAR_MONTHLY_GENERATION_KWH = 525  # Monthly solar output from 5kWp system (~105 kWh/kWp/month)
 SELF_CONSUMPTION_BEFORE = 0.30
 SELF_CONSUMPTION_AFTER = 0.45
 
@@ -59,7 +65,7 @@ def calculate_bill(kwh: float, tiers: list = None) -> float:
     Calculate electricity bill using tiered (lũy tiến) pricing structure.
 
     Args:
-        kwh: Total monthly consumption in kWh.
+        kwh: Grid-purchased kWh (after solar self-consumption is subtracted from total load).
         tiers: List of (threshold, price_per_kwh) tuples. Defaults to EVN_TIERS.
 
     Returns:
@@ -71,8 +77,10 @@ def calculate_bill(kwh: float, tiers: list = None) -> float:
         EVN sinh hoạt (residential) pricing.
 
     Example:
-        >>> calculate_bill(50)  # First tier only
-        >>> calculate_bill(530)  # Should be close to BILL_BEFORE_VND (896,125đ)
+        >>> grid_purchase_kwh(0.30)  # Solar self-consumption 30%
+        372.5
+        >>> calculate_bill(grid_purchase_kwh(0.30))  # Should equal BILL_BEFORE_VND (896,125đ)
+        896125.0
     """
     if tiers is None:
         tiers = EVN_TIERS
@@ -102,15 +110,49 @@ def calculate_bill(kwh: float, tiers: list = None) -> float:
     return total_bill
 
 
-# Validation: calculate_bill(MONTHLY_KWH) should be close to BILL_BEFORE_VND
-# Tolerance: allow ±2% difference (EVN may apply surcharges/VAT not modeled here)
-_calculated_bill = calculate_bill(MONTHLY_KWH)
-_tolerance = BILL_BEFORE_VND * 0.02
-if abs(_calculated_bill - BILL_BEFORE_VND) > _tolerance:
-    import warnings
-    warnings.warn(
-        f"Bill mismatch: calculate_bill({MONTHLY_KWH}) = {_calculated_bill:.0f}đ, "
-        f"but BILL_BEFORE_VND = {BILL_BEFORE_VND}đ. Difference: {abs(_calculated_bill - BILL_BEFORE_VND):.0f}đ. "
-        f"This may indicate EVN tier thresholds need adjustment or baseline is based on different assumptions.",
-        UserWarning
-    )
+def grid_purchase_kwh(self_consumption_rate: float) -> float:
+    """
+    Calculate grid-purchased kWh after solar self-consumption.
+
+    Args:
+        self_consumption_rate: Fraction of solar output self-consumed directly (0.0 to 1.0).
+                              Remainder is exported to grid.
+
+    Returns:
+        kWh purchased from grid = MONTHLY_KWH - (SOLAR_MONTHLY_GENERATION_KWH * self_consumption_rate)
+
+    Calculation logic:
+        - Household total load: MONTHLY_KWH
+        - Solar output: SOLAR_MONTHLY_GENERATION_KWH
+        - Solar self-consumed: SOLAR_MONTHLY_GENERATION_KWH * self_consumption_rate
+        - Grid-purchased (incurs EVN tiered pricing): MONTHLY_KWH - solar_self_consumed
+
+    Example:
+        >>> grid_purchase_kwh(0.30)  # 30% self-consumption
+        372.5  # = 530 - (525 * 0.30)
+        >>> grid_purchase_kwh(0.45)  # 45% self-consumption
+        293.75  # = 530 - (525 * 0.45)
+    """
+    solar_self_consumed = SOLAR_MONTHLY_GENERATION_KWH * self_consumption_rate
+    return MONTHLY_KWH - solar_self_consumed
+
+
+# Validation: calculate_bill(grid_purchase_kwh(...)) should match locked baseline bills
+# Tolerance: ±1đ (float rounding only; these must reconcile exactly)
+_grid_purchase_before = grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)
+_calculated_bill_before = calculate_bill(_grid_purchase_before)
+_diff_before = abs(_calculated_bill_before - BILL_BEFORE_VND)
+assert _diff_before <= 1, (
+    f"Bill mismatch (BEFORE): calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_BEFORE})) = {_calculated_bill_before:.0f}đ, "
+    f"but BILL_BEFORE_VND = {BILL_BEFORE_VND}đ. Difference: {_diff_before:.0f}đ. "
+    f"This indicates EVN tier thresholds or SOLAR_MONTHLY_GENERATION_KWH need adjustment."
+)
+
+_grid_purchase_after = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
+_calculated_bill_after = calculate_bill(_grid_purchase_after)
+_diff_after = abs(_calculated_bill_after - BILL_AFTER_VND)
+assert _diff_after <= 1, (
+    f"Bill mismatch (AFTER): calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_AFTER})) = {_calculated_bill_after:.0f}đ, "
+    f"but BILL_AFTER_VND = {BILL_AFTER_VND}đ. Difference: {_diff_after:.0f}đ. "
+    f"This indicates EVN tier thresholds or SOLAR_MONTHLY_GENERATION_KWH need adjustment."
+)
