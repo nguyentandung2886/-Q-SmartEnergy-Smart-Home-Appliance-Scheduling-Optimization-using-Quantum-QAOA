@@ -127,7 +127,17 @@ Trang chính (Dashboard) dùng wording: "Tối ưu hóa lịch chạy", "Kết q
 
 Test backend chạy thẳng vào instance SQL Server đã cài (không SQLite riêng cho test) — mỗi test wrap trong transaction, rollback ở cuối (`pytest` fixture dùng SQLAlchemy session + `transaction.rollback()`), không để lại data rác. Cần 1 connection string riêng cho test (DB name khác, vd `q_smartenergy_test`) để không đụng data thật.
 
-## 9. Must-have vs Nice-to-have
+## 9. UI Animation (Framer Motion)
+
+Frontend React dùng `framer-motion` (thêm vào `client/package.json` dependencies — thư viện animation phổ biến nhất cho React, "feel" chuyên nghiệp) cho 4 nhóm hiệu ứng:
+1. **Chuyển trang**: fade/slide mượt giữa login → dashboard → trang kết quả → lịch sử (dùng `AnimatePresence` bao Route).
+2. **Micro-interaction**: nút bấm/input có phản hồi hover/tap (scale nhẹ, đổi màu mượt) — áp dụng cho nút "Tối ưu hóa", CRUD thiết bị, login/register.
+3. **Loading state**: skeleton/spinner animate trong lúc gọi `/optimize` (~1-2s) — không để màn hình đứng im không phản hồi.
+4. **Kết quả reveal**: ảnh Gantt/bar chart (PNG base64 từ backend) fade+scale-in khi load xong, số liệu (bill before/after, savings %) animate đếm số (count-up) thay vì hiện ngay.
+
+Animation là lớp PHỦ LÊN các trang must-have đã hoạt động đúng chức năng — implement SAU KHI trang đó chạy đúng logic (gọi API, hiện đúng data), KHÔNG làm animation trước khi trang còn chưa chạy được. Nếu thiếu thời gian, cắt animation trước, giữ nguyên chức năng (đây vẫn là phần "đẹp mắt thêm", không phải yêu cầu chức năng — xem mục 10 Must-have vs Nice-to-have).
+
+## 10. Must-have vs Nice-to-have
 
 **Must-have (demo):**
 - FastAPI wrapper quanh pipeline có sẵn, đúng 5 endpoint nhóm ở mục 5
@@ -138,14 +148,15 @@ Test backend chạy thẳng vào instance SQL Server đã cài (không SQLite ri
 - Ẩn QUBO/QAOA khỏi UI chính
 
 **Nice-to-have (cắt nếu thiếu thời gian, KHÔNG làm trước must-have):**
+- 4 nhóm animation Framer Motion ở mục 9 (làm SAU must-have, theo đúng thứ tự ưu tiên đã chốt)
 - Onboarding tutorial từng bước
 - Quên mật khẩu / xác thực email
 - Đa hộ gia đình/user (1 user hiện chỉ có 1 bộ thiết bị)
-- Progress indicator real-time khi optimize (QAOA ~1-2s nên ít cần)
+- Progress indicator real-time khi optimize (QAOA ~1-2s nên ít cần — animation loading ở mục 9 đã đủ)
 - Rate-limiting chống brute-force login
 - Chart tương tác/kéo-thả native React (việc của subsystem 2)
 
-## 10. Ngoài phạm vi
+## 11. Ngoài phạm vi
 
 - Storytelling/diễn giải tự nhiên cho chart, lịch chỉnh sửa kéo-thả real-time — subsystem 2, brainstorm riêng.
 - Deploy lên cloud/hosting thật — chỉ cần chạy local cho demo.
