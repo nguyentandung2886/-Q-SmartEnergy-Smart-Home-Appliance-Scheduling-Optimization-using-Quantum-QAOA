@@ -162,3 +162,39 @@ class TestGridPurchaseKwh:
             f"Bill mismatch: calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_AFTER})) = {calculated_bill:.0f}đ, "
             f"expected BILL_AFTER_VND = {BILL_AFTER_VND}đ"
         )
+
+
+class TestReconciliationCheck:
+    """Test calc._check_reconciliation() — the non-assert baseline lock (Task 1,
+    score-improvement plan). Using `assert` here was a real bug: `python -O` strips
+    assert statements, silently disabling the safety check."""
+
+    def test_check_reconciliation_passes_within_tolerance(self):
+        """Values within ±1đ must not raise."""
+        from calc import _check_reconciliation
+        _check_reconciliation(896125.4, 896125, "TEST")  # should not raise
+
+    def test_check_reconciliation_raises_outside_tolerance(self):
+        """Values differing by more than ±1đ must raise BaselineReconciliationError."""
+        from calc import _check_reconciliation, BaselineReconciliationError
+        with pytest.raises(BaselineReconciliationError):
+            _check_reconciliation(900000, 896125, "TEST")
+
+    def test_baseline_reconciliation_error_is_exception_subclass(self):
+        from calc import BaselineReconciliationError
+        assert issubclass(BaselineReconciliationError, Exception)
+
+    def test_module_level_reconciliation_still_holds(self):
+        """The module-level checks (BEFORE/AFTER) must still pass at import time —
+        this is implicitly verified by `import calc` succeeding at all, but assert it
+        explicitly here so a future regression fails this test, not just import."""
+        from calc import (
+            BILL_AFTER_VND,
+            BILL_BEFORE_VND,
+            SELF_CONSUMPTION_AFTER,
+            SELF_CONSUMPTION_BEFORE,
+            calculate_bill,
+            grid_purchase_kwh,
+        )
+        assert abs(calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)) - BILL_BEFORE_VND) <= 1
+        assert abs(calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_AFTER)) - BILL_AFTER_VND) <= 1

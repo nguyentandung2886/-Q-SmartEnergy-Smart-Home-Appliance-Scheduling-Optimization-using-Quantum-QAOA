@@ -12,6 +12,8 @@ Verifies (per Task 6 brief):
    before writing this test, per brief instructions).
 """
 
+import pytest
+
 import app
 import data_prep
 import qubo_builder
@@ -58,3 +60,27 @@ def test_run_optimization_default_day_returns_valid_schedule():
     for appliance in qubo_builder.DEFAULT_APPLIANCES:
         assert appliance.name in result.schedule
         assert result.schedule[appliance.name] in appliance.candidate_hours
+
+
+def test_run_optimization_with_weather_condition_returns_valid_schedule():
+    result = app.run_optimization(weather_condition="rainy")
+    assert isinstance(result, ScheduleResult)
+    assert len(result.schedule) == len(qubo_builder.DEFAULT_APPLIANCES)
+    for appliance in qubo_builder.DEFAULT_APPLIANCES:
+        assert appliance.name in result.schedule
+        assert result.schedule[appliance.name] in appliance.candidate_hours
+
+
+def test_run_optimization_with_custom_appliances():
+    custom = [
+        qubo_builder.Appliance(
+            name="Test Appliance", power_w=1000, duration_hours=1, candidate_hours=(6, 12)
+        ),
+    ]
+    result = app.run_optimization(appliances=custom)
+    assert result.schedule["Test Appliance"] in (6, 12)
+
+
+def test_run_optimization_invalid_weather_raises_value_error():
+    with pytest.raises(ValueError):
+        app.run_optimization(weather_condition="snowy")

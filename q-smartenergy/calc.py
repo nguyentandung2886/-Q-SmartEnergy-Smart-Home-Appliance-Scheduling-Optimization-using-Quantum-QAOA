@@ -17,10 +17,17 @@ Baseline numbers (locked, do not alter):
   (bills calculated on grid-purchased kWh, not total consumption)
 
 EVN Tiered Pricing:
-- The pricing follows Vietnam's standard tiered electricity pricing structure (EVN sinh hoạt).
-- Thresholds (reference): 0-50 kWh (tier 1), 51-100 (tier 2), 101-200 (tier 3),
+- The pricing MECHANISM (price increases in steps as cumulative monthly kWh rises) follows
+  Vietnam's residential tiered/lũy tiến structure mandated by QĐ 14/2025/QĐ-TTg, QĐ 1279/QĐ-BCT,
+  and QĐ 963/QĐ-BCT (cited in the team's own proposal). This mechanism is real.
+- The SPECIFIC threshold/price values below (1,800-3,150đ/kWh across 6 tiers) are illustrative
+  numbers chosen to produce this PoC's locked baseline story (530 kWh/month, 896,125đ ->
+  658,125đ) — they are NOT a verbatim transcription of the latest published EVN rate table.
+  Do not present them to a judge as "the current official EVN price list" without checking
+  the latest published rates first.
+- Thresholds used here: 0-50 kWh (tier 1), 51-100 (tier 2), 101-200 (tier 3),
   201-300 (tier 4), 301-400 (tier 5), >400 (tier 6).
-- These thresholds are configurable if EVN updates rates.
+- These thresholds/prices are configurable if real, current EVN rates need to be substituted.
 
 Rubric Mapping:
 - III.5: Data generator based on actual EVN tiered pricing structure.
@@ -137,22 +144,33 @@ def grid_purchase_kwh(self_consumption_rate: float) -> float:
     return MONTHLY_KWH - solar_self_consumed
 
 
-# Validation: calculate_bill(grid_purchase_kwh(...)) should match locked baseline bills
-# Tolerance: ±1đ (float rounding only; these must reconcile exactly)
-_grid_purchase_before = grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)
-_calculated_bill_before = calculate_bill(_grid_purchase_before)
-_diff_before = abs(_calculated_bill_before - BILL_BEFORE_VND)
-assert _diff_before <= 1, (
-    f"Bill mismatch (BEFORE): calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_BEFORE})) = {_calculated_bill_before:.0f}đ, "
-    f"but BILL_BEFORE_VND = {BILL_BEFORE_VND}đ. Difference: {_diff_before:.0f}đ. "
-    f"This indicates EVN tier thresholds or SOLAR_MONTHLY_GENERATION_KWH need adjustment."
-)
+class BaselineReconciliationError(Exception):
+    """Raised at import time if calc.py's locked baseline bills don't reconcile with
+    calculate_bill(grid_purchase_kwh(...)). A real exception is used here instead of
+    `assert` deliberately: `python -O` strips all `assert` statements, which would
+    silently disable this safety check."""
 
-_grid_purchase_after = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
-_calculated_bill_after = calculate_bill(_grid_purchase_after)
-_diff_after = abs(_calculated_bill_after - BILL_AFTER_VND)
-assert _diff_after <= 1, (
-    f"Bill mismatch (AFTER): calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_AFTER})) = {_calculated_bill_after:.0f}đ, "
-    f"but BILL_AFTER_VND = {BILL_AFTER_VND}đ. Difference: {_diff_after:.0f}đ. "
-    f"This indicates EVN tier thresholds or SOLAR_MONTHLY_GENERATION_KWH need adjustment."
+
+def _check_reconciliation(calculated: float, expected: float, label: str) -> None:
+    """Raise BaselineReconciliationError if `calculated` and `expected` don't
+    reconcile within ±1đ (float rounding tolerance only — these must match almost
+    exactly). Extracted as a standalone function (not an inline assert) so it survives
+    `python -O` and is directly unit-testable with both passing and failing inputs.
+    """
+    diff = abs(calculated - expected)
+    if diff > 1:
+        raise BaselineReconciliationError(
+            f"Bill mismatch ({label}): calculated={calculated:.0f}đ, expected={expected:.0f}đ. "
+            f"Difference: {diff:.0f}đ. This indicates EVN tier thresholds or "
+            f"SOLAR_MONTHLY_GENERATION_KWH need adjustment."
+        )
+
+
+# Validation: calculate_bill(grid_purchase_kwh(...)) must match the locked baseline bills.
+# Tolerance: ±1đ (float rounding only; these must reconcile almost exactly).
+_check_reconciliation(
+    calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)), BILL_BEFORE_VND, "BEFORE"
+)
+_check_reconciliation(
+    calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_AFTER)), BILL_AFTER_VND, "AFTER"
 )
