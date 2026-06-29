@@ -147,9 +147,9 @@ if st.button("Tối ưu hóa"):
             f"QUBO energy: {result.energy:.0f}"
         )
         st.info(
-            "Biểu đồ hóa đơn ở trên là số liệu dự báo cho hộ mẫu 530 kWh/tháng (calc.py, minh "
-            "họa quy mô tiết kiệm cả tháng khi áp dụng rộng) — KHÔNG phải số tính trực tiếp từ "
-            "2 thiết bị demo phía trên."
+            f"Biểu đồ hóa đơn ở trên là số liệu dự báo cho hộ mẫu {calc.MONTHLY_KWH} kWh/tháng "
+            "(calc.py, minh họa quy mô tiết kiệm cả tháng khi áp dụng rộng) — KHÔNG phải số "
+            "tính trực tiếp từ 2 thiết bị demo phía trên."
         )
 
         with st.expander("Phân tích tuning hyperparameter QAOA (reps/maxiter)"):
