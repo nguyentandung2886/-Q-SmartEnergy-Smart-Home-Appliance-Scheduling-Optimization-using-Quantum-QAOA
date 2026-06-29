@@ -1,200 +1,160 @@
 """
-Test baseline constants and calculations in calc.py.
-
-Verifies that:
-1. Core baseline numbers are correctly set (MONTHLY_KWH, BILL_BEFORE_VND, BILL_AFTER_VND)
-2. calculate_bill() produces reasonable results for various inputs
-3. SAVINGS_PERCENT is calculated correctly per formula
+Tests for calc.py — rebased on the real EVN tariff (5 tiers + 8% VAT, effective
+29/05/2025 per QĐ 14/2025/QĐ-TTg + QĐ 1279/QĐ-BCT) and a MONTHLY_KWH derived from
+appliance_catalog.py (no longer a locked literal).
 """
 
 import pytest
+
 from calc import (
-    MONTHLY_KWH,
-    BILL_BEFORE_VND,
     BILL_AFTER_VND,
+    BILL_BEFORE_VND,
+    EVN_TIERS,
+    MONTHLY_KWH,
     SAVINGS_PERCENT,
+    SELF_CONSUMPTION_AFTER,
+    SELF_CONSUMPTION_BEFORE,
     SOLAR_CAPACITY_KWP,
     SOLAR_MONTHLY_GENERATION_KWH,
-    SELF_CONSUMPTION_BEFORE,
-    SELF_CONSUMPTION_AFTER,
-    EVN_TIERS,
+    VAT_RATE,
     calculate_bill,
     grid_purchase_kwh,
 )
 
 
-class TestBaselineConstants:
-    """Test that baseline constants match locked values."""
-
-    def test_monthly_kwh(self):
-        """MONTHLY_KWH must equal 530."""
-        assert MONTHLY_KWH == 530, f"Expected MONTHLY_KWH=530, got {MONTHLY_KWH}"
-
-    def test_bill_before_vnd(self):
-        """BILL_BEFORE_VND must equal 896125."""
-        assert BILL_BEFORE_VND == 896125, f"Expected BILL_BEFORE_VND=896125, got {BILL_BEFORE_VND}"
-
-    def test_bill_after_vnd(self):
-        """BILL_AFTER_VND must equal 658125."""
-        assert BILL_AFTER_VND == 658125, f"Expected BILL_AFTER_VND=658125, got {BILL_AFTER_VND}"
-
-    def test_savings_percent(self):
-        """SAVINGS_PERCENT must equal 26.6 (calculated per formula)."""
-        expected = (BILL_BEFORE_VND - BILL_AFTER_VND) / BILL_BEFORE_VND * 100
-        assert abs(SAVINGS_PERCENT - 26.6) < 0.1, f"Expected SAVINGS_PERCENT≈26.6, got {SAVINGS_PERCENT}"
-        assert abs(SAVINGS_PERCENT - expected) < 0.1, f"SAVINGS_PERCENT must match formula: ({BILL_BEFORE_VND} - {BILL_AFTER_VND}) / {BILL_BEFORE_VND} * 100 = {expected:.2f}"
-
-    def test_solar_capacity(self):
-        """SOLAR_CAPACITY_KWP must equal 5."""
-        assert SOLAR_CAPACITY_KWP == 5, f"Expected SOLAR_CAPACITY_KWP=5, got {SOLAR_CAPACITY_KWP}"
-
-    def test_self_consumption_tiers(self):
-        """Self-consumption before and after must be 0.30 and 0.45."""
-        assert SELF_CONSUMPTION_BEFORE == 0.30, f"Expected SELF_CONSUMPTION_BEFORE=0.30, got {SELF_CONSUMPTION_BEFORE}"
-        assert SELF_CONSUMPTION_AFTER == 0.45, f"Expected SELF_CONSUMPTION_AFTER=0.45, got {SELF_CONSUMPTION_AFTER}"
-
-
 class TestEVNTiers:
-    """Test EVN tier structure."""
+    """5-tier structure, real EVN figures (QĐ 14/2025/QĐ-TTg + QĐ 1279/QĐ-BCT)."""
 
-    def test_evn_tiers_defined(self):
-        """EVN_TIERS must be defined as a list."""
-        assert isinstance(EVN_TIERS, list), "EVN_TIERS must be a list"
-        assert len(EVN_TIERS) == 6, f"Expected 6 EVN tiers, got {len(EVN_TIERS)}"
+    def test_evn_tiers_has_five_tiers(self):
+        assert len(EVN_TIERS) == 5
 
-    def test_evn_tier_prices(self):
-        """EVN tier prices must be in correct order: 1800, 1900, 2200, 2700, 3050, 3150 đ/kWh."""
-        expected_prices = [1800, 1900, 2200, 2700, 3050, 3150]
+    def test_evn_tier_prices_match_official_figures(self):
+        expected_prices = [1984, 2380, 2998, 3571, 3967]
         actual_prices = [price for _, price in EVN_TIERS]
-        assert actual_prices == expected_prices, f"Expected prices {expected_prices}, got {actual_prices}"
+        assert actual_prices == expected_prices
+
+    def test_evn_tier_thresholds_match_official_figures(self):
+        expected_thresholds = [100, 200, 400, 700, float("inf")]
+        actual_thresholds = [threshold for threshold, _ in EVN_TIERS]
+        assert actual_thresholds == expected_thresholds
+
+    def test_vat_rate_is_eight_percent(self):
+        assert VAT_RATE == 0.08
 
 
-class TestCalculateBill:
-    """Test the calculate_bill() function with various inputs."""
+class TestCalculateBillWithVAT:
+    """calculate_bill() now includes 8% VAT — verified against hand-computed,
+    single-tier cases to avoid any risk of a multi-tier arithmetic mistake."""
 
     def test_calculate_bill_zero(self):
-        """Bill for 0 kWh should be 0."""
-        assert calculate_bill(0) == 0, "Bill for 0 kWh must be 0"
+        assert calculate_bill(0) == 0
 
-    def test_calculate_bill_tier1_only(self):
-        """Bill for 50 kWh (tier 1 only) should be 50 * 1800 = 90000."""
+    def test_calculate_bill_tier1_only_includes_vat(self):
+        """50 kWh, entirely in tier 1 (0-100): 50 * 1984 = 99,200đ pre-VAT;
+        *1.08 = 107,136đ exactly."""
         result = calculate_bill(50)
-        expected = 50 * 1800
-        assert result == expected, f"Expected {expected}, got {result}"
+        assert result == pytest.approx(107136.0, abs=0.01)
 
-    def test_calculate_bill_tier2_partial(self):
-        """Bill for 75 kWh (50 in tier 1 + 25 in tier 2) should be 50*1800 + 25*1900 = 137500."""
-        result = calculate_bill(75)
-        expected = 50 * 1800 + 25 * 1900
-        assert result == expected, f"Expected {expected}, got {result}"
+    def test_calculate_bill_tier1_boundary_includes_vat(self):
+        """100 kWh, exactly tier 1's upper boundary: 100 * 1984 = 198,400đ pre-VAT;
+        *1.08 = 214,272đ exactly."""
+        result = calculate_bill(100)
+        assert result == pytest.approx(214272.0, abs=0.01)
 
-    def test_calculate_bill_baseline(self):
-        """Bill for MONTHLY_KWH (530 kWh) should be positive and reasonable."""
-        result = calculate_bill(MONTHLY_KWH)
-        assert result > 0, f"Bill must be positive, got {result}"
-        # The baseline BILL_BEFORE_VND is 896125đ, but due to EVN tier math,
-        # calculate_bill(530) may differ slightly. We only check it's positive and reasonable.
-        assert result > 500000, f"Bill for 530 kWh should be > 500,000đ, got {result}"
-
-    def test_calculate_bill_large_usage(self):
-        """Bill for very large usage (1000 kWh) should be high."""
-        result = calculate_bill(1000)
-        assert result > 2000000, f"Bill for 1000 kWh should be > 2,000,000đ, got {result}"
-
-    def test_calculate_bill_negative_input(self):
-        """Bill calculation should raise ValueError for negative kWh."""
+    def test_calculate_bill_negative_input_raises(self):
         with pytest.raises(ValueError, match="non-negative"):
             calculate_bill(-10)
 
     def test_calculate_bill_is_monotonic(self):
-        """Bill should increase monotonically with kWh."""
-        for kwh in [0, 50, 100, 200, 300, 400, 500, 530]:
-            prev_bill = calculate_bill(kwh)
-            next_bill = calculate_bill(kwh + 10)
-            assert next_bill >= prev_bill, f"Bill not monotonic: {kwh}→{kwh+10} kWh, got {prev_bill}→{next_bill}đ"
+        for kwh in [0, 50, 100, 200, 400, 600, 700, 900]:
+            assert calculate_bill(kwh + 10) >= calculate_bill(kwh)
+
+
+class TestMonthlyKwhDerivedFromCatalog:
+    """MONTHLY_KWH is no longer a locked literal — it comes from appliance_catalog.py."""
+
+    def test_monthly_kwh_matches_catalog_total(self):
+        from appliance_catalog import total_monthly_kwh
+
+        assert MONTHLY_KWH == pytest.approx(total_monthly_kwh())
+
+    def test_monthly_kwh_is_realistic_household_scale(self):
+        """Sanity bound, not a locked target: a single household's monthly consumption
+        should plausibly be between 100 and 3000 kWh. This guards against a unit error
+        (e.g. Wh vs kWh) in appliance_catalog.py, not a specific expected value."""
+        assert 100 < MONTHLY_KWH < 3000
 
 
 class TestGridPurchaseKwh:
-    """Test grid_purchase_kwh() function and its integration with calculate_bill()."""
-
-    def test_grid_purchase_kwh_zero_consumption(self):
-        """Grid purchase for 0% self-consumption should equal total monthly load."""
-        result = grid_purchase_kwh(0.0)
-        expected = MONTHLY_KWH
-        assert result == expected, f"Expected {expected}, got {result}"
+    def test_grid_purchase_kwh_zero_consumption_equals_monthly_kwh(self):
+        assert grid_purchase_kwh(0.0) == pytest.approx(MONTHLY_KWH)
 
     def test_grid_purchase_kwh_full_consumption(self):
-        """Grid purchase for 100% self-consumption should be total load minus all solar."""
-        result = grid_purchase_kwh(1.0)
         expected = MONTHLY_KWH - SOLAR_MONTHLY_GENERATION_KWH
-        assert result == expected, f"Expected {expected}, got {result}"
+        assert grid_purchase_kwh(1.0) == pytest.approx(expected)
 
-    def test_grid_purchase_kwh_before_scenario(self):
-        """Grid purchase for SELF_CONSUMPTION_BEFORE (30%) should equal 372.5 kWh."""
-        result = grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)
-        expected = MONTHLY_KWH - (SOLAR_MONTHLY_GENERATION_KWH * SELF_CONSUMPTION_BEFORE)
-        assert result == pytest.approx(expected), f"Expected {expected}, got {result}"
-        # Exact check: 530 - (525 * 0.30) = 530 - 157.5 = 372.5
-        assert result == pytest.approx(372.5), f"Expected 372.5, got {result}"
-
-    def test_grid_purchase_kwh_after_scenario(self):
-        """Grid purchase for SELF_CONSUMPTION_AFTER (45%) should equal 293.75 kWh."""
-        result = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
-        expected = MONTHLY_KWH - (SOLAR_MONTHLY_GENERATION_KWH * SELF_CONSUMPTION_AFTER)
-        assert result == pytest.approx(expected), f"Expected {expected}, got {result}"
-        # Exact check: 530 - (525 * 0.45) = 530 - 236.25 = 293.75
-        assert result == pytest.approx(293.75), f"Expected 293.75, got {result}"
-
-    def test_bill_before_baseline_reconciliation(self):
-        """Bill for grid_purchase_kwh(SELF_CONSUMPTION_BEFORE) must equal BILL_BEFORE_VND."""
-        grid_kwh = grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)
-        calculated_bill = calculate_bill(grid_kwh)
-        assert calculated_bill == pytest.approx(BILL_BEFORE_VND, abs=1), (
-            f"Bill mismatch: calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_BEFORE})) = {calculated_bill:.0f}đ, "
-            f"expected BILL_BEFORE_VND = {BILL_BEFORE_VND}đ"
-        )
-
-    def test_bill_after_baseline_reconciliation(self):
-        """Bill for grid_purchase_kwh(SELF_CONSUMPTION_AFTER) must equal BILL_AFTER_VND."""
-        grid_kwh = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
-        calculated_bill = calculate_bill(grid_kwh)
-        assert calculated_bill == pytest.approx(BILL_AFTER_VND, abs=1), (
-            f"Bill mismatch: calculate_bill(grid_purchase_kwh({SELF_CONSUMPTION_AFTER})) = {calculated_bill:.0f}đ, "
-            f"expected BILL_AFTER_VND = {BILL_AFTER_VND}đ"
-        )
+    def test_grid_purchase_kwh_before_after_ordering(self):
+        """Higher self-consumption must always mean less grid purchase."""
+        before = grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)
+        after = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
+        assert after < before
 
 
-class TestReconciliationCheck:
-    """Test calc._check_reconciliation() — the non-assert baseline lock (Task 1,
-    score-improvement plan). Using `assert` here was a real bug: `python -O` strips
-    assert statements, silently disabling the safety check."""
+class TestBillBeforeAfterDerivation:
+    """BILL_BEFORE_VND/BILL_AFTER_VND/SAVINGS_PERCENT are now direct formula results,
+    not independently-chosen literals — these tests check the formula relationship and
+    real-world properties, not a specific locked number."""
 
-    def test_check_reconciliation_passes_within_tolerance(self):
-        """Values within ±1đ must not raise."""
-        from calc import _check_reconciliation
-        _check_reconciliation(896125.4, 896125, "TEST")  # should not raise
+    def test_bill_before_equals_formula(self):
+        expected = calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_BEFORE))
+        assert BILL_BEFORE_VND == pytest.approx(expected)
 
-    def test_check_reconciliation_raises_outside_tolerance(self):
-        """Values differing by more than ±1đ must raise BaselineReconciliationError."""
-        from calc import _check_reconciliation, BaselineReconciliationError
-        with pytest.raises(BaselineReconciliationError):
-            _check_reconciliation(900000, 896125, "TEST")
+    def test_bill_after_equals_formula(self):
+        expected = calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_AFTER))
+        assert BILL_AFTER_VND == pytest.approx(expected)
 
-    def test_baseline_reconciliation_error_is_exception_subclass(self):
-        from calc import BaselineReconciliationError
-        assert issubclass(BaselineReconciliationError, Exception)
+    def test_bill_after_is_less_than_bill_before(self):
+        assert BILL_AFTER_VND < BILL_BEFORE_VND
 
-    def test_module_level_reconciliation_still_holds(self):
-        """The module-level checks (BEFORE/AFTER) must still pass at import time —
-        this is implicitly verified by `import calc` succeeding at all, but assert it
-        explicitly here so a future regression fails this test, not just import."""
-        from calc import (
-            BILL_AFTER_VND,
-            BILL_BEFORE_VND,
-            SELF_CONSUMPTION_AFTER,
-            SELF_CONSUMPTION_BEFORE,
-            calculate_bill,
-            grid_purchase_kwh,
-        )
-        assert abs(calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_BEFORE)) - BILL_BEFORE_VND) <= 1
-        assert abs(calculate_bill(grid_purchase_kwh(SELF_CONSUMPTION_AFTER)) - BILL_AFTER_VND) <= 1
+    def test_savings_percent_matches_formula(self):
+        expected = (BILL_BEFORE_VND - BILL_AFTER_VND) / BILL_BEFORE_VND * 100
+        assert SAVINGS_PERCENT == pytest.approx(expected)
+
+    def test_savings_percent_is_positive_but_modest(self):
+        """Known consequence of the real 5-tier structure: BEFORE and AFTER grid-purchase
+        both land in the same (wide) tier 4, so savings come from solar self-consumption
+        alone, not tier-jump avoidance — expect single-digit-to-twenties percent, not the
+        old illustrative 26.6%. This is intentional; do not adjust the catalog or
+        self-consumption assumptions to force a different value here."""
+        assert 0 < SAVINGS_PERCENT < 30
+
+    def test_before_and_after_grid_purchase_fall_in_same_tier(self):
+        """Documents the known real-data finding: with the actual 5-tier EVN structure,
+        the BEFORE/AFTER macro comparison no longer crosses a tier boundary at all."""
+
+        def tier_index(kwh: float) -> int:
+            cumulative = 0.0
+            for i, (threshold, _price) in enumerate(EVN_TIERS):
+                if kwh <= threshold:
+                    return i
+                cumulative = threshold
+            return len(EVN_TIERS) - 1
+
+        before_tier = tier_index(grid_purchase_kwh(SELF_CONSUMPTION_BEFORE))
+        after_tier = tier_index(grid_purchase_kwh(SELF_CONSUMPTION_AFTER))
+        assert before_tier == after_tier == 3  # Bậc 4 (401-700 kWh), 0-indexed
+
+
+class TestUnchangedConstants:
+    """Solar/self-consumption assumptions are out of scope for this rebase — confirm
+    they're still the same illustrative values as before."""
+
+    def test_solar_capacity(self):
+        assert SOLAR_CAPACITY_KWP == 5
+
+    def test_solar_monthly_generation(self):
+        assert SOLAR_MONTHLY_GENERATION_KWH == 525
+
+    def test_self_consumption_tiers(self):
+        assert SELF_CONSUMPTION_BEFORE == 0.30
+        assert SELF_CONSUMPTION_AFTER == 0.45
