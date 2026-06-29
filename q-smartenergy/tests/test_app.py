@@ -42,18 +42,20 @@ def test_import_app_does_not_raise():
 
 
 def test_default_day_has_nonflat_tier_price():
-    # Regression-guard (Task 7): day 12 must have a genuine intraday tier jump
-    # (>=2 distinct marginal prices across its 24 hours), unlike day 15 (flat all
-    # day). This protects app.run_optimization's default day_of_month=12 from being
-    # silently reverted to a flat-pricing day without anyone re-checking the signal.
-    profile = data_prep.generate_tier_price_profile(day_of_month=12)
+    # Regression-guard: day 9 must have a genuine intraday tier jump (>=2 distinct
+    # marginal prices across its 24 hours) under the real 5-tier EVN structure
+    # (hours 0-7 at Bậc 2 = 2380đ/kWh, hours 8-23 at Bậc 3 = 2998đ/kWh), unlike day 15
+    # (flat all day). This protects app.run_optimization's default day_of_month=9
+    # from being silently reverted to a flat-pricing day without anyone re-checking
+    # the signal.
+    profile = data_prep.generate_tier_price_profile(day_of_month=9)
     assert len(set(profile.values)) >= 2
 
 
 def test_run_optimization_default_day_returns_valid_schedule():
     # Same shape check as test_run_optimization_default_returns_valid_schedule, but
-    # explicit about exercising the new default day_of_month=12 end-to-end: the
-    # pipeline must still produce a valid schedule, not just "day 12 has price signal".
+    # explicit about exercising the new default day_of_month=9 end-to-end: the
+    # pipeline must still produce a valid schedule, not just "day 9 has price signal".
     result = app.run_optimization()
     assert isinstance(result, ScheduleResult)
     assert len(result.schedule) == len(qubo_builder.DEFAULT_APPLIANCES)

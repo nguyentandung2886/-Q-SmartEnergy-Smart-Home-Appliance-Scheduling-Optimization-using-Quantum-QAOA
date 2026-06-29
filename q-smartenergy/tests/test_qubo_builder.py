@@ -136,3 +136,17 @@ def test_invalid_hour_raises():
     ]
     with pytest.raises(ValueError):
         build_qubo(bad, profile)
+
+
+def test_appliance_is_flexible_defaults_to_true():
+    """New is_flexible field must default to True so every existing Appliance
+    construction (including DEFAULT_APPLIANCES) is unaffected by this change."""
+    appliance = Appliance(name="Test", power_w=100, duration_hours=1, candidate_hours=(7, 13))
+    assert appliance.is_flexible is True
+
+
+def test_appliance_is_flexible_can_be_set_false():
+    appliance = Appliance(
+        name="Tủ lạnh", power_w=34, duration_hours=24, candidate_hours=(), is_flexible=False
+    )
+    assert appliance.is_flexible is False
