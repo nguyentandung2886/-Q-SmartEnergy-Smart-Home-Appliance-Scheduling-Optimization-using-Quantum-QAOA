@@ -29,6 +29,15 @@ Economic/Physical Meaning:
   in the monthly cumulative total — NOT a time-of-day rate. There is no time-of-day
   pricing in this market.
 
+  Honesty note: H_cost and H_solar can pull in different directions. When solar at an
+  hour is strong enough to cover most/all of an appliance's energy, the optimizer may
+  deliberately choose that hour even if its marginal tier price is HIGHER than another
+  candidate hour — because the solar-covered savings outweigh the tier difference. This
+  is correct behavior, not a bug: it is exactly what minimizing H_cost + H_solar together
+  means. Do not claim this system "always avoids tier jumps" — claim that it balances tier
+  avoidance against solar self-consumption, and let whichever axis has the bigger lever at
+  that hour win.
+
 Rubric Mapping:
   # Rubric III.1 - OOP, type hint đầy đủ
   # Rubric III.2 - QUBO ánh xạ ràng buộc đời thực
