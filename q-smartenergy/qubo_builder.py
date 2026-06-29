@@ -65,13 +65,19 @@ class TimeSlot:
 
 @dataclass
 class Appliance:
-    """Thiết bị điện gia dụng có thể linh hoạt giờ chạy.
+    """Thiết bị điện gia dụng. is_flexible=True (mặc định) nghĩa là thiết bị có thể dời giờ
+    chạy trong số candidate_hours — đây là biến quyết định trong QUBO (xem build_qubo).
+    is_flexible=False nghĩa là tải cố định (tủ lạnh 24/7, điều hòa theo nhu cầu nhiệt độ,
+    v.v.) — KHÔNG đưa vào build_qubo làm biến quyết định, chỉ đóng góp kWh cố định vào tổng
+    tiêu thụ tháng (xem appliance_catalog.py). candidate_hours không có ý nghĩa khi
+    is_flexible=False — để tuple rỗng `()`.
     # Rubric III.1 - OOP, type hint đầy đủ
     """
     name: str
     power_w: float
-    duration_hours: float
-    candidate_hours: Tuple[int, ...]   # >= 2 giờ ứng viên, optimizer chọn đúng 1
+    duration_hours: float              # flexible: giờ chạy/lần; KHÔNG flexible: giờ dùng/ngày
+    candidate_hours: Tuple[int, ...]   # flexible: >= 2 giờ ứng viên; KHÔNG flexible: ()
+    is_flexible: bool = True
 
     @property
     def energy_kwh(self) -> float:
