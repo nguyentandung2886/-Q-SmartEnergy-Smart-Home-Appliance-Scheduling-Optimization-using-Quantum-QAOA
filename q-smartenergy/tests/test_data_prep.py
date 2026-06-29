@@ -106,3 +106,49 @@ class TestBuildDailyProfile:
         assert monthly_total == pytest.approx(SOLAR_MONTHLY_GENERATION_KWH, rel=1e-6), (
             f"Expected monthly total ≈ {SOLAR_MONTHLY_GENERATION_KWH}, got {monthly_total}"
         )
+
+
+def test_generate_solar_profile_cloudy_scales_by_point_six():
+    """weather_condition='cloudy' must scale the total daily solar output by exactly 0.6
+    relative to the 'sunny' (default) profile."""
+    sunny = generate_solar_profile(weather_condition="sunny")
+    cloudy = generate_solar_profile(weather_condition="cloudy")
+    assert cloudy.sum() == pytest.approx(sunny.sum() * 0.6, rel=1e-9)
+
+
+def test_generate_solar_profile_rainy_scales_by_point_two_five():
+    sunny = generate_solar_profile(weather_condition="sunny")
+    rainy = generate_solar_profile(weather_condition="rainy")
+    assert rainy.sum() == pytest.approx(sunny.sum() * 0.25, rel=1e-9)
+
+
+def test_generate_solar_profile_default_weather_is_sunny():
+    """Calling with no weather_condition must behave identically to weather_condition='sunny'
+    (this is what preserves the existing 'flat'/no-weather behavior of every caller that
+    doesn't pass the new parameter)."""
+    default = generate_solar_profile()
+    explicit_sunny = generate_solar_profile(weather_condition="sunny")
+    assert list(default.values) == list(explicit_sunny.values)
+
+
+def test_generate_solar_profile_invalid_weather_raises():
+    with pytest.raises(ValueError):
+        generate_solar_profile(weather_condition="snowy")
+
+
+def test_build_daily_profile_passes_through_weather_condition():
+    sunny_profile = build_daily_profile(day_of_month=12, weather_condition="sunny")
+    rainy_profile = build_daily_profile(day_of_month=12, weather_condition="rainy")
+    assert rainy_profile["solar_kwh"].sum() == pytest.approx(
+        sunny_profile["solar_kwh"].sum() * 0.25, rel=1e-9
+    )
+    # price_per_kwh must be unaffected by weather (weather only touches solar, never price)
+    assert list(sunny_profile["price_per_kwh"]) == list(rainy_profile["price_per_kwh"])
+
+
+def test_build_daily_profile_default_weather_unchanged():
+    """Calling build_daily_profile(day_of_month=...) with no weather_condition must match
+    the pre-existing behavior exactly — this is the regression guard for this task."""
+    default = build_daily_profile(day_of_month=12)
+    explicit_sunny = build_daily_profile(day_of_month=12, weather_condition="sunny")
+    assert list(default["solar_kwh"]) == list(explicit_sunny["solar_kwh"])

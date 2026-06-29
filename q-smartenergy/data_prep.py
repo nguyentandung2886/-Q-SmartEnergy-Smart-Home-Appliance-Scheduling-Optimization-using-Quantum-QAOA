@@ -8,7 +8,10 @@ Input:
 
 Output:
   - generate_solar_profile(): 24 hourly solar generation values (kWh) for a representative
-    day, bell-shaped (Gaussian) around noon, daylight-only (06:00-18:00).
+    day, bell-shaped (Gaussian) around noon, daylight-only (06:00-18:00). Accepts an optional
+    weather_condition ("sunny"/"cloudy"/"rainy", default "sunny") that scales the total via
+    weather_model.solar_multiplier() — the classical forecasting layer feeding this PoC's
+    Hybrid Quantum-Classical architecture (see weather_model.py).
   - marginal_tier_price(): the EVN tier price (đ/kWh) that applies to the NEXT kWh consumed,
     given how much has already been consumed in the month so far.
   - generate_tier_price_profile(): 24 hourly marginal prices (đ/kWh) for a representative day.
@@ -34,17 +37,24 @@ import numpy as np
 import pandas as pd
 
 from calc import MONTHLY_KWH, SOLAR_MONTHLY_GENERATION_KWH, EVN_TIERS
+from weather_model import solar_multiplier
 
 
-def generate_solar_profile(monthly_generation_kwh: float = SOLAR_MONTHLY_GENERATION_KWH) -> pd.Series:
+def generate_solar_profile(
+    monthly_generation_kwh: float = SOLAR_MONTHLY_GENERATION_KWH,
+    weather_condition: str = "sunny",
+) -> pd.Series:
     """24 hourly solar generation values (kWh) for a representative day, bell-shaped
     (Gaussian) curve peaking at hour 12, generating only within the 06:00-18:00 window.
-    Total for the day equals monthly_generation_kwh / 30."""
+    Total for a "sunny" day equals monthly_generation_kwh / 30; weather_condition scales
+    that total via weather_model.solar_multiplier() — the classical forecasting layer of
+    the Hybrid Quantum-Classical architecture (see weather_model.py). Raises ValueError
+    for any weather_condition not in weather_model.WEATHER_MULTIPLIERS."""
     hours = np.arange(24)
     sigma = 3.0
     raw = np.exp(-((hours - 12.0) ** 2) / (2 * sigma ** 2))
     raw[(hours < 6) | (hours > 18)] = 0.0
-    daily_avg = monthly_generation_kwh / 30.0
+    daily_avg = monthly_generation_kwh / 30.0 * solar_multiplier(weather_condition)
     scaled = raw / raw.sum() * daily_avg
     return pd.Series(scaled, index=hours, name="solar_kwh")
 
@@ -76,10 +86,12 @@ def generate_tier_price_profile(day_of_month: int = 15, monthly_kwh: float = MON
     return pd.Series(prices, index=range(24), name="price_per_kwh")
 
 
-def build_daily_profile(day_of_month: int = 15) -> pd.DataFrame:
+def build_daily_profile(day_of_month: int = 15, weather_condition: str = "sunny") -> pd.DataFrame:
     """24-row DataFrame (columns: hour, solar_kwh, price_per_kwh), one row per hour of the
-    representative day."""
-    solar = generate_solar_profile()
+    representative day. weather_condition ("sunny"/"cloudy"/"rainy") scales solar_kwh via
+    weather_model.solar_multiplier() — see generate_solar_profile(). price_per_kwh is never
+    affected by weather (EVN tiered pricing has nothing to do with weather)."""
+    solar = generate_solar_profile(weather_condition=weather_condition)
     price = generate_tier_price_profile(day_of_month)
     return pd.DataFrame({
         "hour": range(24),
