@@ -52,20 +52,24 @@ class TestMarginalTierPrice:
     """Test marginal_tier_price() at and around EVN tier boundaries."""
 
     def test_zero_cumulative_is_tier1(self):
-        """At cumulative 0 kWh, marginal price must be tier 1 (1800 đ/kWh)."""
-        assert marginal_tier_price(0) == 1800
+        """At cumulative 0 kWh, marginal price must be tier 1 (1984 đ/kWh)."""
+        assert marginal_tier_price(0) == 1984
 
     def test_just_below_tier1_boundary(self):
-        """At cumulative 49.9 kWh, marginal price must still be tier 1 (1800 đ/kWh)."""
-        assert marginal_tier_price(49.9) == 1800
+        """At cumulative 49.9 kWh, marginal price must still be tier 1 (1984 đ/kWh).
 
-    def test_just_above_tier1_boundary(self):
-        """At cumulative 50.1 kWh, marginal price must be tier 2 (1900 đ/kWh)."""
-        assert marginal_tier_price(50.1) == 1900
+        Tier 1 now spans 0-100 kWh (not 0-50), so 49.9 kWh is well inside it.
+        """
+        assert marginal_tier_price(49.9) == 1984
+
+    def test_around_tier1_tier2_boundary(self):
+        """Tier 1 now spans 0-100 kWh; just below 100 is tier 1, just above is tier 2."""
+        assert marginal_tier_price(99.9) == 1984
+        assert marginal_tier_price(100.1) == 2380
 
     def test_far_above_all_tiers(self):
-        """At cumulative 10000 kWh, marginal price must be the top tier (3150 đ/kWh)."""
-        assert marginal_tier_price(10000) == 3150
+        """At cumulative 10000 kWh, marginal price must be the top tier (3967 đ/kWh)."""
+        assert marginal_tier_price(10000) == 3967
 
 
 class TestGenerateTierPriceProfile:

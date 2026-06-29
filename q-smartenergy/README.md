@@ -15,6 +15,7 @@ A weather-aware classical forecasting layer (`weather_model.py`) feeds simulated
 ```
 q-smartenergy/
 ├── calc.py                  # Single source of truth for baseline constants & bill calculation
+├── appliance_catalog.py      # Sourced 10-type household appliance catalog (feeds calc.MONTHLY_KWH)
 ├── data_prep.py              # EVN tier price profile + solar generation profile (weather-aware)
 ├── weather_model.py          # Classical weather-forecast layer (Hybrid Quantum-Classical bonus)
 ├── qubo_builder.py           # QUBO formulation for quantum optimization
@@ -26,6 +27,7 @@ q-smartenergy/
 └── tests/
     ├── __init__.py
     ├── test_baseline.py        # Tests for calc.py baseline constants
+    ├── test_appliance_catalog.py # Tests for appliance_catalog.py
     ├── test_data_prep.py       # Tests for data_prep.py
     ├── test_weather_model.py   # Tests for weather_model.py
     ├── test_qubo_builder.py    # Tests for qubo_builder.py
@@ -39,7 +41,8 @@ q-smartenergy/
 
 | Module | Purpose |
 |--------|---------|
-| `calc.py` | **Baseline lock**: all project constants (530 kWh/month, EVN tier prices, bill targets). Every other module imports from here — never hard-code. |
+| `calc.py` | **Baseline lock**: all project constants (catalog-derived monthly kWh, real EVN tier prices, computed bill figures). Every other module imports from here — never hard-code. |
+| `appliance_catalog.py` | Sourced 10-type household appliance catalog (power ratings, daily usage hours) — feeds `calc.py`'s `MONTHLY_KWH`. |
 | `data_prep.py` | Prepares the EVN marginal-tier-price profile and the (weather-aware) solar generation profile for a representative day. |
 | `weather_model.py` | Classical forecasting layer: converts a simulated weather condition into a solar-output multiplier — the "classical" half of the Hybrid Quantum-Classical architecture. |
 | `qubo_builder.py` | Encodes the appliance scheduling problem as a QUBO (Quadratic Unconstrained Binary Optimization) matrix. |
@@ -64,27 +67,19 @@ pytest tests/
 streamlit run app.py
 ```
 
-## Baseline Numbers (Locked)
+## Baseline Numbers
 
-- **Monthly Consumption**: 530 kWh
-- **Solar Capacity**: 5 kWp (525 kWh/month generation)
-- **Self-Consumption Before Optimization**: 30%
-- **Self-Consumption After Optimization**: 45%
-- **Bill Before Optimization**: 896,125đ
-- **Bill After Optimization**: 658,125đ
-- **Savings**: 26.6%
+- **Monthly Consumption**: derived from `appliance_catalog.py`'s 10-type household catalog (≈723 kWh/month for the current catalog — NOT a locked target; see `appliance_catalog.py` for sourced power ratings per appliance)
+- **Solar Capacity**: 5 kWp (illustrative)
+- **Self-Consumption Before/After Optimization**: 30% / 45% (illustrative)
+- **Bill Before/After, Savings %**: computed directly via `calc.calculate_bill(calc.grid_purchase_kwh(rate))` — not locked literals. With the real 5-tier EVN structure, both the before and after grid-purchase amounts land in the same tier (Bậc 4), so the resulting savings reflect solar self-consumption only, not tier-jump avoidance — see `calc.py`'s module docstring.
 
-These macro numbers represent a whole-month, whole-household projection (see `calc.py`) — they are a different scale from the 2-appliance live demo scenario shown in the Gantt chart, and `app.py` labels them separately so the two are never confused.
-
-**EVN Tiered Pricing** (đ/kWh) used in this PoC:
-- Tier 1 (0–50 kWh): 1,800
-- Tier 2 (51–100 kWh): 1,900
-- Tier 3 (101–200 kWh): 2,200
-- Tier 4 (201–300 kWh): 2,700
-- Tier 5 (301–400 kWh): 3,050
-- Tier 6 (>400 kWh): 3,150
-
-The tiered/lũy tiến MECHANISM (price rises in steps with cumulative monthly kWh, regardless of time of day) follows real EVN regulation (QĐ 14/2025/QĐ-TTg, QĐ 1279/QĐ-BCT, QĐ 963/QĐ-BCT). The specific threshold/price VALUES above are illustrative numbers chosen to produce this PoC's locked baseline story — they are not a verbatim transcription of the latest published EVN rate table (see `calc.py`'s module docstring for the full disclosure).
+**EVN Tiered Pricing** (đ/kWh, real rates effective 29/05/2025 per QĐ 14/2025/QĐ-TTg + QĐ 1279/QĐ-BCT, NOT including 8% VAT — `calculate_bill()` adds VAT automatically):
+- Bậc 1 (0–100 kWh): 1.984
+- Bậc 2 (101–200 kWh): 2.380
+- Bậc 3 (201–400 kWh): 2.998
+- Bậc 4 (401–700 kWh): 3.571
+- Bậc 5 (>700 kWh): 3.967
 
 ## Rubric Mapping
 

@@ -38,7 +38,7 @@ import weather_model
 
 def run_optimization(
     appliances=None,
-    day_of_month: int = 12,
+    day_of_month: int = 9,
     weather_condition: str = "sunny",
     use_quantum: bool = True,
 ):
@@ -49,10 +49,11 @@ def run_optimization(
            day_of_month (1-30), weather_condition ("sunny"/"cloudy"/"rainy", default "sunny").
     Output: quantum_runner.ScheduleResult.
 
-    day_of_month default = 12 (KHÔNG phải 15): đã verify bằng tay ngày 12/30 có nhảy bậc giá
-    THẬT trong ngày (lũy kế trước ngày 12 ~194.33 kWh, ngưỡng 200kWh rơi giữa ngày -> giá
-    chuyển 2200đ sang 2700đ/kWh ngay trong 24 giờ đó). Ngày 15 cho giá PHẲNG suốt ngày. Đừng
-    đổi lại 15 nếu chưa kiểm tra data_prep.generate_tier_price_profile(day_of_month=...) có
+    day_of_month default = 9 (KHÔNG phải 12): với bậc giá EVN THẬT (5 bậc) và MONTHLY_KWH
+    mới derive từ appliance_catalog.py (~723 kWh/tháng), ngày 12 không còn nhảy bậc giá (giá
+    PHẲNG suốt ngày ở bậc 3 = 2998đ/kWh). Đã verify bằng tay: ngày 9/30 có nhảy bậc giá THẬT
+    trong ngày — giờ 0-7 ở bậc 2 (2380đ/kWh), giờ 8-23 chuyển sang bậc 3 (2998đ/kWh). Đừng đổi
+    sang ngày khác nếu chưa kiểm tra data_prep.generate_tier_price_profile(day_of_month=...) có
     >=2 giá khác nhau.
 
     LƯU Ý TRUNG THỰC (xem qubo_builder.build_qubo để biết công thức đầy đủ): khi solar đủ
@@ -97,7 +98,7 @@ weather_label = st.selectbox("Thời tiết hôm nay", list(_WEATHER_LABEL_TO_CO
 weather_condition = _WEATHER_LABEL_TO_CONDITION[weather_label]
 
 day_of_month = st.slider(
-    "Ngày trong tháng (vị trí lũy kế trong bậc giá EVN)", min_value=1, max_value=30, value=12
+    "Ngày trong tháng (vị trí lũy kế trong bậc giá EVN)", min_value=1, max_value=30, value=9
 )
 
 edited_appliances = []
