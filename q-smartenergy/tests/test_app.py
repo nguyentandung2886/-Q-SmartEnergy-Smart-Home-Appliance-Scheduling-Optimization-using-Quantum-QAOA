@@ -13,6 +13,7 @@ Verifies (per Task 6 brief):
 """
 
 import app
+import data_prep
 import qubo_builder
 from quantum_runner import ScheduleResult
 
@@ -36,3 +37,24 @@ def test_import_app_does_not_raise():
     # module would already have failed to collect. This test just asserts the
     # module object is present and exposes the expected pure-logic function.
     assert hasattr(app, "run_optimization")
+
+
+def test_default_day_has_nonflat_tier_price():
+    # Regression-guard (Task 7): day 12 must have a genuine intraday tier jump
+    # (>=2 distinct marginal prices across its 24 hours), unlike day 15 (flat all
+    # day). This protects app.run_optimization's default day_of_month=12 from being
+    # silently reverted to a flat-pricing day without anyone re-checking the signal.
+    profile = data_prep.generate_tier_price_profile(day_of_month=12)
+    assert len(set(profile.values)) >= 2
+
+
+def test_run_optimization_default_day_returns_valid_schedule():
+    # Same shape check as test_run_optimization_default_returns_valid_schedule, but
+    # explicit about exercising the new default day_of_month=12 end-to-end: the
+    # pipeline must still produce a valid schedule, not just "day 12 has price signal".
+    result = app.run_optimization()
+    assert isinstance(result, ScheduleResult)
+    assert len(result.schedule) == len(qubo_builder.DEFAULT_APPLIANCES)
+    for appliance in qubo_builder.DEFAULT_APPLIANCES:
+        assert appliance.name in result.schedule
+        assert result.schedule[appliance.name] in appliance.candidate_hours
