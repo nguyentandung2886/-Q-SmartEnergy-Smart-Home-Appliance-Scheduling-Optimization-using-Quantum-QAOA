@@ -124,6 +124,64 @@ def solve_qaoa(
         raise QAOAExecutionError(f"QAOA execution failed: {exc}") from exc
 
 
+def compare_qaoa_hyperparameters(
+    Q: np.ndarray,
+    configs: List[Tuple[int, int]] = None,
+    seed: int = 42,
+) -> List[Dict[str, object]]:
+    """Chạy QAOA với nhiều cấu hình (reps, maxiter) trên cùng Q, đo runtime + energy đạt
+    được, và so sánh với global optimum (brute-force) để đánh giá độ chính xác — minh
+    chứng hiểu rõ trade-off tuning tham số QAOA.
+    # Rubric III.3 - hiểu rõ cách tuning các tham số (hyperparameters) của thuật toán
+    #                 lượng tử để đạt độ chính xác cao
+
+    Args:
+        Q: ma trận QUBO upper-triangular (cùng convention với build_qubo/solve_qaoa).
+        configs: list (reps, maxiter) cần so sánh. Default 4 cấu hình từ rẻ -> đắt:
+                 [(1, 25), (1, 50), (2, 50), (3, 100)].
+        seed: seed cố định cho mọi lần chạy (so sánh công bằng giữa các cấu hình).
+
+    Returns:
+        List[dict], mỗi dict có các khóa: "reps", "maxiter", "bitstring", "energy",
+        "runtime_seconds", "matches_global_optimum" (so với solve_classical_bruteforce(Q)),
+        "error" (None nếu chạy thành công, ngược lại str mô tả lỗi). Nếu 1 cấu hình QAOA
+        lỗi, dict đó có bitstring/energy/matches_global_optimum = None/None/False và
+        "error" chứa thông báo — KHÔNG để exception lan ra ngoài (không crash khi hiển thị
+        phân tích này trong demo).
+    """
+    if configs is None:
+        configs = [(1, 25), (1, 50), (2, 50), (3, 100)]
+
+    _, optimal_energy = solve_classical_bruteforce(Q)
+
+    results: List[Dict[str, object]] = []
+    for reps, maxiter in configs:
+        start = time.perf_counter()
+        try:
+            bitstring, energy = solve_qaoa(Q, reps=reps, maxiter=maxiter, seed=seed)
+            runtime = time.perf_counter() - start
+            results.append({
+                "reps": reps,
+                "maxiter": maxiter,
+                "bitstring": bitstring,
+                "energy": energy,
+                "runtime_seconds": runtime,
+                "matches_global_optimum": abs(energy - optimal_energy) < 1e-6,
+                "error": None,
+            })
+        except QAOAExecutionError as exc:
+            results.append({
+                "reps": reps,
+                "maxiter": maxiter,
+                "bitstring": None,
+                "energy": None,
+                "runtime_seconds": time.perf_counter() - start,
+                "matches_global_optimum": False,
+                "error": str(exc),
+            })
+    return results
+
+
 def is_valid_one_hot(bitstring: str, var_map: Dict[int, Tuple[str, int]]) -> bool:
     """True nếu bitstring thỏa one-hot: với mỗi tên thiết bị (group theo var_map[j][0]),
     đúng 1 bit trong group đó bằng '1'."""
