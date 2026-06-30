@@ -7,7 +7,6 @@ Per-user bill: calculated from the user's OWN appliance list total, not the glob
 import base64
 import io
 import json
-import unicodedata
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
@@ -66,64 +65,12 @@ def _fig_to_base64(fig) -> str:
     return base64.b64encode(buf.read()).decode("ascii")
 
 
-def _normalize_name(name: str) -> str:
-    """Normalize a string for comparison, handling encoding issues.
-    Removes combining characters (accents) and normalizes to NFC form.
-    This helps match appliance names even if they were corrupted during storage/retrieval."""
-    # NFD decomposition separates base characters from combining marks
-    nfd = unicodedata.normalize('NFD', name)
-    # Remove combining marks (accents, diacritics)
-    normalized = ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
-    return normalized
-
-
-def _levenshtein_distance(s1: str, s2: str) -> int:
-    """Calculate Levenshtein distance between two strings for fuzzy matching."""
-    if len(s1) < len(s2):
-        return _levenshtein_distance(s2, s1)
-    if len(s2) == 0:
-        return len(s1)
-
-    previous_row = range(len(s2) + 1)
-    for i, c1 in enumerate(s1):
-        current_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = previous_row[j + 1] + 1
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (c1 != c2)
-            current_row.append(min(insertions, deletions, substitutions))
-        previous_row = current_row
-    return previous_row[-1]
-
-
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
-    from appliance_catalog import HOUSEHOLD_APPLIANCES
-
     result = []
     for row in rows:
         hours = tuple(int(h) for h in row.candidate_hours.split(",") if h) if row.candidate_hours else ()
-        # Try to find the correct catalog name by fuzzy matching or normalization
-        corrected_name = row.name
-
-        # First try exact normalized match
-        normalized_db_name = _normalize_name(row.name)
-        for cat_app in HOUSEHOLD_APPLIANCES:
-            if _normalize_name(cat_app.name) == normalized_db_name:
-                corrected_name = cat_app.name
-                break
-        else:
-            # If no exact normalized match, try fuzzy matching based on Levenshtein distance
-            min_distance = float('inf')
-            for cat_app in HOUSEHOLD_APPLIANCES:
-                distance = _levenshtein_distance(_normalize_name(row.name), _normalize_name(cat_app.name))
-                if distance < min_distance:
-                    min_distance = distance
-                    corrected_name = cat_app.name
-                if distance == 0:  # Perfect normalized match found
-                    break
-
         result.append(Appliance(
-            name=corrected_name, power_w=row.power_w, duration_hours=row.duration_hours,
+            name=row.name, power_w=row.power_w, duration_hours=row.duration_hours,
             candidate_hours=hours, is_flexible=row.is_flexible,
         ))
     return result
@@ -141,12 +88,10 @@ def optimize(
     # --- pinned_schedule: validate hours then override flexibility for this run only ---
     pinned = payload.pinned_schedule or {}
     if pinned:
-        # Build map from normalized names to appliances for robust matching (handles encoding issues)
-        user_app_by_normalized = {_normalize_name(a.name): a for a in user_appliances}
+        user_app_map = {a.name: a for a in user_appliances}
         pinned_to_apply = {}
         for pinned_name, hour in pinned.items():
-            normalized_pinned = _normalize_name(pinned_name)
-            app = user_app_by_normalized.get(normalized_pinned)
+            app = user_app_map.get(pinned_name)
             if app is None:
                 continue  # silently ignore appliances not in user's list
             if app.candidate_hours and hour not in app.candidate_hours:
@@ -154,9 +99,7 @@ def optimize(
                     status_code=422,
                     detail=f"'{pinned_name}': hour {hour} not in candidate_hours {list(app.candidate_hours)}",
                 )
-            # Store using the appliance's actual name (from DB), not the pinned_name
-            pinned_to_apply[app.name] = hour
-        # Override pinned appliances to fixed for this run only
+            pinned_to_apply[pinned_name] = hour
         user_appliances = [
             Appliance(
                 name=a.name,
