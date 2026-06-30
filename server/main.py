@@ -30,9 +30,12 @@ with engine.begin() as _conn:
 
 app = FastAPI(title="Q-SmartEnergy API", version="1.0.0")
 
+_default_origins = "http://localhost:5173,http://localhost:3000"
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React Vite dev server
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

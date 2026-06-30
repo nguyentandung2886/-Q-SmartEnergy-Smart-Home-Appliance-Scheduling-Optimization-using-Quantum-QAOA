@@ -1,0 +1,33 @@
+FROM python:3.11-slim
+
+# Install Microsoft ODBC Driver 18 + mssql-tools18 (for entrypoint DB init)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl gnupg2 apt-transport-https \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+       | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list \
+       -o /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
+       msodbcsql18 mssql-tools18 unixodbc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="$PATH:/opt/mssql-tools18/bin"
+
+WORKDIR /app
+
+# Install Python dependencies (server + q-smartenergy pipeline)
+COPY server/requirements.txt ./server-requirements.txt
+COPY q-smartenergy/requirements.txt ./qse-requirements.txt
+RUN pip install --no-cache-dir -r server-requirements.txt -r qse-requirements.txt
+
+# Copy source
+COPY server/ ./server/
+COPY q-smartenergy/ ./q-smartenergy/
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /app/server
+EXPOSE 8000
+ENTRYPOINT ["/entrypoint.sh"]
