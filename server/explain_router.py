@@ -58,11 +58,21 @@ def _build_prompt(req: ExplainRequest) -> str:
 
 
 def _stream_explanation(prompt: str):
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(prompt, stream=True)
-    for chunk in response:
-        if chunk.text:
-            yield f"data: {chunk.text.replace(chr(10), ' ')}\n\n"
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(prompt, stream=True)
+        for chunk in response:
+            if chunk.text:
+                yield f"data: {chunk.text.replace(chr(10), ' ')}\n\n"
+    except Exception as exc:
+        msg = str(exc)
+        if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+            friendly = "Gemini API đã đạt giới hạn quota. Vui lòng thử lại sau hoặc kiểm tra billing tại https://aistudio.google.com/apikey"
+        elif "401" in msg or "403" in msg or "API_KEY" in msg or "invalid" in msg.lower():
+            friendly = "API key Gemini không hợp lệ. Vui lòng cập nhật GEMINI_API_KEY trong server/.env"
+        else:
+            friendly = f"Không thể kết nối Gemini: {msg[:120]}"
+        yield f"data: ❌ {friendly}\n\n"
     yield "data: [DONE]\n\n"
 
 
