@@ -343,11 +343,16 @@ export default function Dashboard() {
       });
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const text = decoder.decode(value, { stream: true });
-        for (const line of text.split("\n")) {
+        buffer += decoder.decode(value, { stream: true });
+        // Process only complete lines; keep any partial line for the next chunk.
+        let newlineIdx;
+        while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newlineIdx);
+          buffer = buffer.slice(newlineIdx + 1);
           if (!line.startsWith("data: ")) continue;
           const content = line.slice(6);
           if (content === "[DONE]") { setExplainLoading(false); return; }
