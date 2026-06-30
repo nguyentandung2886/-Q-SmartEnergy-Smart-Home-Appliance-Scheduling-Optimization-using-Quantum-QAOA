@@ -16,6 +16,7 @@ class ApplianceIn(BaseModel):
     name: str
     power_w: float
     duration_hours: float
+    quantity: int = 1
     candidate_hours: List[int] = []
     is_flexible: bool = True
 
@@ -25,6 +26,7 @@ class ApplianceOut(BaseModel):
     name: str
     power_w: float
     duration_hours: float
+    quantity: int
     candidate_hours: List[int]
     is_flexible: bool
 
@@ -35,6 +37,7 @@ def _to_out(row: ApplianceModel) -> ApplianceOut:
     hours = [int(h) for h in row.candidate_hours.split(",") if h] if row.candidate_hours else []
     return ApplianceOut(
         id=row.id, name=row.name, power_w=row.power_w, duration_hours=row.duration_hours,
+        quantity=row.quantity if row.quantity else 1,
         candidate_hours=hours, is_flexible=row.is_flexible,
     )
 
@@ -63,6 +66,7 @@ def create_appliance(
     row = ApplianceModel(
         user_id=current_user.id,
         name=payload.name, power_w=payload.power_w, duration_hours=payload.duration_hours,
+        quantity=payload.quantity,
         candidate_hours=",".join(str(h) for h in payload.candidate_hours),
         is_flexible=payload.is_flexible,
     )
@@ -83,6 +87,7 @@ def update_appliance(
     row.name = payload.name
     row.power_w = payload.power_w
     row.duration_hours = payload.duration_hours
+    row.quantity = payload.quantity
     row.candidate_hours = ",".join(str(h) for h in payload.candidate_hours)
     row.is_flexible = payload.is_flexible
     db.commit()

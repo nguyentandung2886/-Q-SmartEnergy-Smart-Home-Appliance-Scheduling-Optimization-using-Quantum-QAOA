@@ -36,6 +36,7 @@ class ApplianceModel(Base):
     name = Column(Unicode(100), nullable=False)
     power_w = Column(Float, nullable=False)
     duration_hours = Column(Float, nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
     candidate_hours = Column(String(50), default="")
     is_flexible = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, server_default=func.now())

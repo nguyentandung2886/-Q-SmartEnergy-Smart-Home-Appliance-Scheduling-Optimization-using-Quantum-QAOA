@@ -70,7 +70,9 @@ def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
     for row in rows:
         hours = tuple(int(h) for h in row.candidate_hours.split(",") if h) if row.candidate_hours else ()
         result.append(Appliance(
-            name=row.name, power_w=row.power_w, duration_hours=row.duration_hours,
+            name=row.name,
+            power_w=row.power_w * (row.quantity if row.quantity else 1),
+            duration_hours=row.duration_hours,
             candidate_hours=hours, is_flexible=row.is_flexible,
         ))
     return result

@@ -28,6 +28,13 @@ with engine.begin() as _conn:
     except Exception:
         pass  # Column already exists
 
+# Idempotent migration: add quantity column if not present.
+with engine.begin() as _conn:
+    try:
+        _conn.execute(text("ALTER TABLE appliances ADD quantity INT NOT NULL DEFAULT 1"))
+    except Exception:
+        pass  # Column already exists
+
 # Idempotent migration: convert VARCHAR → NVARCHAR for Unicode (Vietnamese text).
 # appliances.name and schedules.schedule_json are the critical columns.
 with engine.begin() as _conn:

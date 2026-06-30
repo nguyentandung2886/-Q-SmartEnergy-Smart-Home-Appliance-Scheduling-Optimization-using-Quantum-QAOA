@@ -18,10 +18,20 @@ const WEATHER_OPTIONS = [
 function ApplianceRow({ appliance, onSave, onDelete }) {
   const [power, setPower] = useState(appliance.power_w);
   const [duration, setDuration] = useState(appliance.duration_hours);
+  const [quantity, setQuantity] = useState(appliance.quantity ?? 1);
 
   function save() {
-    if (Number(power) !== appliance.power_w || Number(duration) !== appliance.duration_hours) {
-      onSave(appliance.id, { ...appliance, power_w: Number(power), duration_hours: Number(duration) });
+    const changed =
+      Number(power) !== appliance.power_w ||
+      Number(duration) !== appliance.duration_hours ||
+      Number(quantity) !== (appliance.quantity ?? 1);
+    if (changed) {
+      onSave(appliance.id, {
+        ...appliance,
+        power_w: Number(power),
+        duration_hours: Number(duration),
+        quantity: Number(quantity),
+      });
     }
   }
 
@@ -35,6 +45,10 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
       <td>
         <input type="number" value={duration} min={0.1} step={0.1}
           onChange={(e) => setDuration(e.target.value)} onBlur={save} />
+      </td>
+      <td>
+        <input type="number" value={quantity} min={1} step={1}
+          onChange={(e) => setQuantity(e.target.value)} onBlur={save} />
       </td>
       <td style={{ color: appliance.is_flexible ? "var(--teal)" : "var(--text-muted)" }}>
         {appliance.is_flexible ? "Linh hoạt" : "Cố định"}
@@ -81,6 +95,7 @@ export default function Dashboard() {
   const [newName, setNewName] = useState("");
   const [newPower, setNewPower] = useState(100);
   const [newDuration, setNewDuration] = useState(1);
+  const [newQty, setNewQty] = useState(1);
   const [pinnedSchedule, setPinnedSchedule] = useState({});
   const [explainText, setExplainText] = useState("");
   const [explainLoading, setExplainLoading] = useState(false);
@@ -113,9 +128,9 @@ export default function Dashboard() {
     e.preventDefault();
     await createAppliance({
       name: newName, power_w: Number(newPower), duration_hours: Number(newDuration),
-      candidate_hours: [], is_flexible: false,
+      quantity: Number(newQty), candidate_hours: [], is_flexible: false,
     });
-    setNewName(""); setNewPower(100); setNewDuration(1);
+    setNewName(""); setNewPower(100); setNewDuration(1); setNewQty(1);
     await loadAppliances();
   }
 
@@ -193,7 +208,7 @@ export default function Dashboard() {
   function handleLogout() { logout(); navigate("/login"); }
 
   const totalKwh = appliances.reduce(
-    (sum, a) => sum + (a.power_w / 1000) * a.duration_hours * 30, 0
+    (sum, a) => sum + (a.power_w / 1000) * a.duration_hours * 30 * (a.quantity ?? 1), 0
   );
 
   return (
@@ -219,7 +234,7 @@ export default function Dashboard() {
           <thead>
             <tr>
               <th>Tên thiết bị</th><th>Công suất (W)</th>
-              <th>Giờ dùng</th><th>Loại</th><th></th>
+              <th>Giờ dùng</th><th>Số lượng</th><th>Loại</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -235,6 +250,8 @@ export default function Dashboard() {
             onChange={(e) => setNewPower(e.target.value)} required />
           <input type="number" placeholder="Giờ/ngày" value={newDuration} min={0.1} step={0.1}
             onChange={(e) => setNewDuration(e.target.value)} required />
+          <input type="number" placeholder="Số lượng" value={newQty} min={1} step={1}
+            onChange={(e) => setNewQty(e.target.value)} required style={{ width: "80px" }} />
           <button type="submit">+ Thêm thiết bị</button>
         </form>
       </div>
@@ -315,9 +332,12 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* Interactive Gantt — replaces static gantt_chart_png */}
+            {/* Interactive Gantt — all appliances: fixed at hour 0, flexible at QAOA hour */}
             <GanttEditor
-              schedule={result.schedule}
+              schedule={{
+                ...appliances.reduce((acc, a) => ({ ...acc, [a.name]: 0 }), {}),
+                ...result.schedule,
+              }}
               appliances={appliances}
               onPinnedChange={handlePinnedChange}
               disabled={reoptimizing}
