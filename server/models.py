@@ -9,7 +9,7 @@ Schema:
                 solver_used, used_fallback, energy, schedule_json (JSON string),
                 monthly_kwh (snapshot), bill_before_vnd (snapshot), bill_after_vnd (snapshot)
 """
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, Unicode, UnicodeText
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -33,7 +33,7 @@ class ApplianceModel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    name = Column(String(100), nullable=False)
+    name = Column(Unicode(100), nullable=False)
     power_w = Column(Float, nullable=False)
     duration_hours = Column(Float, nullable=False)
     candidate_hours = Column(String(50), default="")
@@ -54,7 +54,7 @@ class ScheduleModel(Base):
     solver_used = Column(String(30), nullable=False)
     used_fallback = Column(Boolean, nullable=False)
     energy = Column(Float, nullable=False)
-    schedule_json = Column(Text, nullable=False)
+    schedule_json = Column(UnicodeText, nullable=False)
     monthly_kwh = Column(Float, nullable=False)
     bill_before_vnd = Column(Float, nullable=False)
     bill_after_vnd = Column(Float, nullable=False)

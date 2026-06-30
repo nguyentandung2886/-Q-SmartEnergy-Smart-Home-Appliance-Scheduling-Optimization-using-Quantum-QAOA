@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy import text
 
-from database import Base, engine
+from database import Base, SessionLocal, engine
 
 Base.metadata.create_all(bind=engine)
 
@@ -27,6 +27,45 @@ with engine.begin() as _conn:
         _conn.execute(text("ALTER TABLE schedules ADD savings_percent FLOAT NULL"))
     except Exception:
         pass  # Column already exists
+
+# Idempotent migration: convert VARCHAR → NVARCHAR for Unicode (Vietnamese text).
+# appliances.name and schedules.schedule_json are the critical columns.
+with engine.begin() as _conn:
+    for _stmt in [
+        "ALTER TABLE appliances ALTER COLUMN name NVARCHAR(100) NOT NULL",
+        "ALTER TABLE schedules ALTER COLUMN schedule_json NVARCHAR(MAX) NOT NULL",
+    ]:
+        try:
+            _conn.execute(text(_stmt))
+        except Exception:
+            pass  # Already NVARCHAR, or not applicable
+
+# Re-seed appliances whose names were corrupted by old VARCHAR storage (contain '?').
+from models import ApplianceModel as _ApplianceModel
+import appliance_catalog as _catalog
+
+_db = SessionLocal()
+try:
+    _corrupted_ids = [
+        r[0] for r in _db.execute(
+            text("SELECT DISTINCT user_id FROM appliances WHERE name LIKE '%?%'")
+        ).fetchall()
+    ]
+    for _uid in _corrupted_ids:
+        _db.query(_ApplianceModel).filter(_ApplianceModel.user_id == _uid).delete()
+        for _a in _catalog.HOUSEHOLD_APPLIANCES:
+            _db.add(_ApplianceModel(
+                user_id=_uid,
+                name=_a.name,
+                power_w=_a.power_w,
+                duration_hours=_a.duration_hours,
+                candidate_hours=",".join(str(h) for h in _a.candidate_hours),
+                is_flexible=_a.is_flexible,
+            ))
+    if _corrupted_ids:
+        _db.commit()
+finally:
+    _db.close()
 
 app = FastAPI(title="Q-SmartEnergy API", version="1.0.0")
 
