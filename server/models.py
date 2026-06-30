@@ -3,13 +3,13 @@ SQLAlchemy ORM models: User, ApplianceModel, ScheduleModel.
 Schema:
   users       — id, username (unique), password_hash (bcrypt), created_at
   appliances  — id, user_id FK, name, power_w, duration_hours,
-                candidate_hours (comma-separated string, "" if is_flexible=False),
+                candidate_hours (JSON list of ints, [] if is_flexible=False),
                 is_flexible, created_at
   schedules   — id, user_id FK, created_at, day_of_month, weather_condition,
                 solver_used, used_fallback, energy, schedule_json (JSON string),
                 monthly_kwh (snapshot), bill_before_vnd (snapshot), bill_after_vnd (snapshot)
 """
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -37,7 +37,7 @@ class ApplianceModel(Base):
     power_w = Column(Float, nullable=False)
     duration_hours = Column(Float, nullable=False)
     quantity = Column(Integer, nullable=False, default=1)
-    candidate_hours = Column(String(50), default="")
+    candidate_hours = Column(JSON, nullable=False, default=list)
     is_flexible = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, server_default=func.now())
 

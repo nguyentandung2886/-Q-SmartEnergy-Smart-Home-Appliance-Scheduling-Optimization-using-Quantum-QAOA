@@ -45,7 +45,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
             name=a.name,
             power_w=a.power_w,
             duration_hours=a.duration_hours,
-            candidate_hours=",".join(str(h) for h in a.candidate_hours),
+            candidate_hours=list(a.candidate_hours),
             is_flexible=a.is_flexible,
         ))
 

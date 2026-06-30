@@ -161,7 +161,7 @@ def _default_fixed_hours(appliances: List) -> dict:
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
     result = []
     for row in rows:
-        hours = tuple(int(h) for h in row.candidate_hours.split(",") if h) if row.candidate_hours else ()
+        hours = tuple(row.candidate_hours or ())
         result.append(Appliance(
             name=row.name,
             power_w=row.power_w * (row.quantity if row.quantity else 1),
