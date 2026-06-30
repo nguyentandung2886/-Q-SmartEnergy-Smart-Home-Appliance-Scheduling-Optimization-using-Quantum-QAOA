@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 import calc
 import data_prep
+from data_prep import generate_solar_profile
 import visualizer
 from appliance_catalog import split_by_flexibility, total_monthly_kwh
 from auth import get_current_user
@@ -63,6 +64,37 @@ def _fig_to_base64(fig) -> str:
     fig.savefig(buf, format="png", bbox_inches="tight")
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("ascii")
+
+
+def _schedule_self_consumption_rate(schedule: dict, appliances: List, solar_profile) -> float:
+    """Interpolate the solar self-consumption rate from the actual schedule.
+
+    calc.py models self-consumption as a whole-house rate that rises from
+    SELF_CONSUMPTION_BEFORE (baseline) toward SELF_CONSUMPTION_AFTER (optimized) as flexible
+    loads shift into solar-producing hours. This computes a load-weighted alignment score in
+    [0, 1] — the average normalized solar availability during the hours the schedule's
+    appliances actually run — and interpolates the rate accordingly. Dragging an appliance to
+    a sunnier hour raises the rate (lowers the bill); moving it to night leaves it at baseline.
+    Only schedule entries are considered, so fixed appliances (absent from `schedule`) don't
+    dilute the score.
+    """
+    peak_solar = max(float(s) for s in solar_profile)
+    app_map = {a.name: a for a in appliances}
+    weighted_solar = 0.0
+    total_load = 0.0
+    for name, hour in schedule.items():
+        app = app_map.get(name)
+        if app is None:
+            continue
+        duration = max(1, int(round(app.duration_hours)))
+        kwh_per_hour = app.power_w / 1000.0
+        for h in range(duration):
+            solar_norm = float(solar_profile[(hour + h) % 24]) / peak_solar if peak_solar else 0.0
+            weighted_solar += kwh_per_hour * solar_norm
+            total_load += kwh_per_hour
+
+    alignment = weighted_solar / total_load if total_load > 0 else 0.0
+    return calc.SELF_CONSUMPTION_BEFORE + (calc.SELF_CONSUMPTION_AFTER - calc.SELF_CONSUMPTION_BEFORE) * alignment
 
 
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
@@ -127,12 +159,16 @@ def optimize(
     for name, hour in pinned_to_apply.items():
         result.schedule[name] = hour
 
-    # Per-user bill: uses user's OWN appliance list total, not global calc.MONTHLY_KWH.
-    # Clamp to 0 so that users with few/no appliances (where solar > load) get bill=0, not a ValueError.
+    # Per-user bill: bill_before uses static baseline; bill_after is calculated dynamically
+    # from the actual schedule so dragging appliances to different hours changes the bill.
     user_monthly_kwh = total_monthly_kwh(user_appliances)
+    solar_daily = generate_solar_profile(weather_condition=payload.weather_condition)
+
     grid_before = max(0.0, calc.grid_purchase_kwh(calc.SELF_CONSUMPTION_BEFORE, user_monthly_kwh))
-    grid_after = max(0.0, calc.grid_purchase_kwh(calc.SELF_CONSUMPTION_AFTER, user_monthly_kwh))
     bill_before = calc.calculate_bill(grid_before)
+
+    rate_after = _schedule_self_consumption_rate(result.schedule, user_appliances, solar_daily)
+    grid_after = max(0.0, calc.grid_purchase_kwh(rate_after, user_monthly_kwh))
     bill_after = calc.calculate_bill(grid_after)
     savings_percent = (bill_before - bill_after) / bill_before * 100 if bill_before > 0 else 0.0
 
