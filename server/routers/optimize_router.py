@@ -7,10 +7,10 @@ Per-user bill: calculated from the user's OWN appliance list total, not the glob
 import base64
 import io
 import json
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ class OptimizeRequest(BaseModel):
     day_of_month: int = 9
     weather_condition: str = "sunny"
     use_quantum: bool = True
+    pinned_schedule: Optional[Dict[str, int]] = None
 
 
 class _ScheduleBase(BaseModel):
@@ -83,11 +84,68 @@ def optimize(
 ):
     rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
     user_appliances = _db_rows_to_appliances(rows)
+
+    # --- pinned_schedule: validate hours then override flexibility for this run only ---
+    from appliance_catalog import HOUSEHOLD_APPLIANCES
+    pinned = payload.pinned_schedule or {}
+    if pinned:
+        # Build a reference map of appliances from the catalog for validation
+        catalog_by_name = {app.name: app for app in HOUSEHOLD_APPLIANCES}
+
+        # Try to match each pinned name to an appliance in the user's list
+        pinned_to_apply = {}  # Maps from actual app.name (from DB) to the pinned hour
+        for pinned_name, hour in pinned.items():
+            # First check if this is a known appliance in the catalog
+            if pinned_name not in catalog_by_name:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"'{pinned_name}': unknown appliance",
+                )
+
+            # Get the candidate hours from the catalog
+            catalog_app = catalog_by_name[pinned_name]
+            if catalog_app.candidate_hours and hour not in catalog_app.candidate_hours:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"'{pinned_name}': hour {hour} not in "
+                        f"candidate_hours {list(catalog_app.candidate_hours)}"
+                    ),
+                )
+
+            # Find the corresponding appliance in the user's list (by name match from catalog)
+            matched_app = None
+            for app in user_appliances:
+                if app.name == pinned_name:
+                    matched_app = app
+                    break
+
+            if matched_app:
+                pinned_to_apply[matched_app.name] = hour
+
+        # Replace appliances that are pinned with non-flexible versions
+        user_appliances = [
+            Appliance(
+                name=a.name,
+                power_w=a.power_w,
+                duration_hours=a.duration_hours,
+                candidate_hours=(pinned_to_apply[a.name],),
+                is_flexible=False,
+            )
+            if a.name in pinned_to_apply
+            else a
+            for a in user_appliances
+        ]
+
     flexible, _fixed = split_by_flexibility(user_appliances)
 
     profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
     scheduler = QuantumScheduler(flexible, profile)
     result = scheduler.solve(use_quantum=payload.use_quantum)
+
+    # Merge pinned entries back — QAOA only ran on remaining flexible appliances
+    for name, hour in pinned.items():
+        result.schedule[name] = hour
 
     # Per-user bill: uses user's OWN appliance list total, not global calc.MONTHLY_KWH.
     # Clamp to 0 so that users with few/no appliances (where solar > load) get bill=0, not a ValueError.
