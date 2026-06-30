@@ -7,3 +7,6 @@ venv/
 .env.docker
 server/.env
 client/.env
+
+# Generated artifact from data_prep.py __main__
+q-smartenergy/daily_profile.csv

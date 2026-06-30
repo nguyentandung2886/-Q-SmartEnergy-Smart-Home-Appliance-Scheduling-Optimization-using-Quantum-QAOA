@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   createAppliance, deleteAppliance, getAppliances,
-  optimize as apiOptimize, updateAppliance, explainSchedule, forecastDurations,
+  optimize as apiOptimize, updateAppliance, explainSchedule, forecastDurations, qaoaAnalysis,
 } from "../api";
 import { useAuth } from "../AuthContext";
 import { useCountUp } from "../useCountUp";
@@ -16,6 +16,37 @@ const WEATHER_OPTIONS = [
 ];
 
 const PROGRAM_LABELS = { quick: "Nhanh", normal: "Thường", heavy: "Mạnh" };
+
+// Ngưỡng công suất đồng thời an toàn của hộ gia đình (khớp power_threshold_w trong QUBO H_power).
+const SAFE_POWER_W = 5000;
+
+// Tính công suất đồng thời (W) từng giờ từ lịch tối ưu: thiết bị linh hoạt ở giờ được xếp +
+// thiết bị nền chạy 24/7 (vd tủ lạnh) ở mọi giờ. Trả { peakW, peakHour, names } của giờ đỉnh.
+function computePeakPower(schedule, appliances) {
+  const watts = Array(24).fill(0);
+  const atHour = Array.from({ length: 24 }, () => []);
+  for (const a of appliances) {
+    const eff = a.power_w * (a.quantity ?? 1);
+    if (a.is_flexible) {
+      const h = schedule[a.name];
+      if (h == null) continue;
+      const dur = Math.max(1, Math.ceil(a.duration_hours));
+      for (let k = 0; k < dur; k++) {
+        const hh = (h + k) % 24;
+        watts[hh] += eff;
+        atHour[hh].push(a.name);
+      }
+    } else if (a.duration_hours >= 24) {
+      for (let h = 0; h < 24; h++) {
+        watts[h] += eff;
+        atHour[h].push(a.name);
+      }
+    }
+  }
+  let peakHour = 0;
+  for (let h = 1; h < 24; h++) if (watts[h] > watts[peakHour]) peakHour = h;
+  return { peakW: watts[peakHour], peakHour, names: atHour[peakHour] };
+}
 
 // Đặc trưng công việc cho lớp ML dự báo thời lượng (khớp forecaster.FORECAST_SCHEMA backend).
 const FLEX_FORECAST = [
@@ -139,6 +170,8 @@ export default function Dashboard() {
   );
   const [forecasts, setForecasts] = useState({}); // { name: { predicted_hours, test_mae } }
   const [forecasting, setForecasting] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const debounceRef = useRef(null);
   const { logout } = useAuth();
   const navigate = useNavigate();
@@ -236,6 +269,22 @@ export default function Dashboard() {
     setPinnedSchedule(newPinned);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => runOptimize(newPinned), 400);
+  }
+
+  async function handleAnalyze() {
+    setError("");
+    setAnalyzing(true);
+    try {
+      const data = await qaoaAnalysis({
+        day_of_month: Number(dayOfMonth),
+        weather_condition: weather,
+      });
+      setAnalysis(data);
+    } catch {
+      setError("Lỗi khi phân tích thuật toán QAOA.");
+    } finally {
+      setAnalyzing(false);
+    }
   }
 
   async function handleExplain() {
@@ -477,6 +526,27 @@ export default function Dashboard() {
               disabled={reoptimizing}
             />
 
+            {/* Power-overload safety check (+8đ Mức Dễ): cảnh báo công suất đồng thời */}
+            {(() => {
+              const peak = computePeakPower(result.schedule, appliances);
+              const overload = peak.peakW > SAFE_POWER_W;
+              return (
+                <div
+                  style={{
+                    marginTop: "1rem", padding: "0.6rem 0.9rem", borderRadius: 8,
+                    fontSize: "0.85rem", fontWeight: 600,
+                    background: overload ? "#FEF2F2" : "#F0FDF4",
+                    color: overload ? "#B91C1C" : "var(--teal)",
+                    border: `1px solid ${overload ? "#FCA5A5" : "#86EFAC"}`,
+                  }}
+                >
+                  {overload
+                    ? `⚠️ Cảnh báo quá tải: ${peak.peakW.toLocaleString("vi-VN")}W cùng lúc lúc ${peak.peakHour}h (> ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W) — ${peak.names.join(", ")}`
+                    : `✓ An toàn công suất: cao nhất ${peak.peakW.toLocaleString("vi-VN")}W lúc ${peak.peakHour}h, dưới ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W`}
+                </div>
+              );
+            })()}
+
             {/* Bill comparison chart (static PNG, unchanged) */}
             {result.bill_chart_png && (
               <img
@@ -518,6 +588,47 @@ export default function Dashboard() {
                   <strong>💡 Phân tích kết quả</strong>
                   <p style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
                     {explainText}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* QAOA hyperparameter analysis (III.3 — evidence of quantum tuning) */}
+            <div style={{ marginTop: "1.5rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
+              <button onClick={handleAnalyze} disabled={analyzing}>
+                {analyzing ? "⏳ Đang chạy QAOA nhiều cấu hình..." : "🔬 Phân tích thuật toán lượng tử"}
+              </button>
+              {analysis && (
+                <div style={{ marginTop: "0.75rem" }}>
+                  <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                    QUBO: <strong style={{ color: "var(--indigo)" }}>{analysis.num_variables} qubit</strong>
+                    {" "}({analysis.num_appliances} thiết bị linh hoạt) · Nghiệm tối ưu toàn cục (brute-force):
+                    {" "}<strong>{Number(analysis.brute_force_energy).toLocaleString("vi-VN")}</strong>
+                  </p>
+                  <table style={{ fontSize: "0.82rem" }}>
+                    <thead>
+                      <tr>
+                        <th>reps</th><th>maxiter</th><th>Thời gian (s)</th>
+                        <th>Năng lượng</th><th>Đạt tối ưu?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysis.configs.map((c, i) => (
+                        <tr key={i}>
+                          <td>{c.reps}</td>
+                          <td>{c.maxiter}</td>
+                          <td>{c.runtime_seconds.toFixed(2)}</td>
+                          <td>{c.error ? "—" : Number(c.energy).toLocaleString("vi-VN")}</td>
+                          <td style={{ color: c.matches_global_optimum ? "var(--teal)" : "var(--gold)", fontWeight: 600 }}>
+                            {c.matches_global_optimum ? "✓ Có" : "✗ Chưa"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
+                    Tăng reps/maxiter giúp QAOA tiệm cận nghiệm tối ưu toàn cục, đổi lại thời gian chạy lâu hơn —
+                    đây là trade-off tuning tham số lượng tử.
                   </p>
                 </div>
               )}

@@ -22,7 +22,7 @@ from appliance_catalog import split_by_flexibility, total_monthly_kwh
 from auth import get_current_user
 from database import get_db
 from models import ApplianceModel, ScheduleModel, User
-from quantum_runner import QuantumScheduler
+from quantum_runner import QuantumScheduler, compare_qaoa_hyperparameters, solve_classical_bruteforce
 from qubo_builder import Appliance
 
 router = APIRouter(tags=["optimize"])
@@ -213,6 +213,59 @@ def optimize(
         schedule=result.schedule, monthly_kwh=user_monthly_kwh,
         bill_before_vnd=bill_before, bill_after_vnd=bill_after,
         savings_percent=savings_percent, gantt_chart_png=gantt_png, bill_chart_png=bill_png,
+    )
+
+
+class QaoaConfigResult(BaseModel):
+    reps: int
+    maxiter: int
+    energy: Optional[float]
+    runtime_seconds: float
+    matches_global_optimum: bool
+    error: Optional[str]
+
+
+class QaoaAnalysisOut(BaseModel):
+    num_appliances: int
+    num_variables: int      # binary variables = qubits
+    brute_force_energy: Optional[float]
+    configs: List[QaoaConfigResult]
+
+
+@router.post("/qaoa-analysis", response_model=QaoaAnalysisOut)
+def qaoa_analysis(
+    payload: OptimizeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Run QAOA across several (reps, maxiter) configs on the user's flexible-appliance QUBO and
+    compare each against the classical brute-force optimum. Surfaces the hyperparameter-tuning
+    evidence (III.3) in the web demo: qubit count, runtime, and whether each config reached the
+    global optimum. On-demand because it runs QAOA several times."""
+    rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
+    user_appliances = _db_rows_to_appliances(rows)
+    flexible, _fixed = split_by_flexibility(user_appliances)
+
+    profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
+    scheduler = QuantumScheduler(flexible, profile)
+    n = scheduler.Q.shape[0]
+
+    if n == 0:
+        return QaoaAnalysisOut(num_appliances=0, num_variables=0, brute_force_energy=None, configs=[])
+
+    _, brute_force_energy = solve_classical_bruteforce(scheduler.Q)
+    raw = compare_qaoa_hyperparameters(scheduler.Q)
+    configs = [
+        QaoaConfigResult(
+            reps=r["reps"], maxiter=r["maxiter"], energy=r["energy"],
+            runtime_seconds=round(r["runtime_seconds"], 3),
+            matches_global_optimum=r["matches_global_optimum"], error=r["error"],
+        )
+        for r in raw
+    ]
+    return QaoaAnalysisOut(
+        num_appliances=len(flexible), num_variables=n,
+        brute_force_energy=brute_force_energy, configs=configs,
     )
 
 

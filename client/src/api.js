@@ -61,6 +61,12 @@ export async function forecastDurations(jobs) {
   return data;
 }
 
+// QAOA hyperparameter sweep vs classical brute-force optimum
+export async function qaoaAnalysis(params) {
+  const { data } = await apiClient.post("/qaoa-analysis", params);
+  return data;
+}
+
 // Returns raw fetch Response (not axios) — needed for SSE ReadableStream
 export function explainSchedule(payload) {
   return fetch(`${API_BASE_URL}/explain`, {
