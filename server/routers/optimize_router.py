@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 import calc
 import data_prep
 import visualizer
-from appliance_catalog import split_by_flexibility, total_monthly_kwh, usage_windows
+from appliance_catalog import split_by_flexibility, usage_windows
 from auth import get_current_user
 from database import get_db
 from models import ApplianceModel, ScheduleModel, User
@@ -73,30 +73,87 @@ def _fig_to_base64(fig) -> str:
     return base64.b64encode(buf.read()).decode("ascii")
 
 
-def _daily_solar_savings_vnd(schedule: dict, appliances: List, daily_profile) -> float:
-    """Daily VND saved by scheduling flexible appliances into solar hours.
+def _hourly_load(flex_schedule: dict, fixed_hours: dict, appliances: List) -> List[float]:
+    """Build the household's 24-hour load profile (kWh per hour) from the ACTUAL usage:
+    flexible appliances run for their duration starting at their scheduled hour; fixed
+    appliances run in exactly the hours the user turned on (fixed_hours[name]). power_w
+    already includes quantity (see _db_rows_to_appliances)."""
+    load = [0.0] * 24
+    for app in appliances:
+        eff_kw = app.power_w / 1000.0
+        if app.is_flexible:
+            hour = flex_schedule.get(app.name)
+            if hour is None:
+                continue
+            remaining = app.duration_hours
+            k = 0
+            while remaining > 1e-9:
+                load[(hour + k) % 24] += eff_kw * min(1.0, remaining)
+                remaining -= 1.0
+                k += 1
+        else:
+            for hour in fixed_hours.get(app.name, []):
+                load[int(hour) % 24] += eff_kw
+    return load
 
-    Uses the EXACT per-appliance economics the QUBO minimizes (qubo_builder.build_qubo's
-    H_solar term): for an appliance scheduled at hour h, the solar credit is
-    min(energy_kwh, solar_kwh[h]) * price_per_kwh[h] — the marginal-price value of the energy
-    covered directly by rooftop solar at that hour. Summing over the scheduled appliances
-    gives the day's saving; the caller scales by 30 for the month. Deriving bill_after from
-    this same daily_profile (the very DataFrame QAOA optimized over) keeps the displayed
-    savings consistent with the objective the quantum solver minimized — not a separate
-    heuristic — and makes the bill respond to weather (scales solar_kwh) and day_of_month
-    (shifts the marginal tier price), exactly like the QAOA result does.
-    """
-    by_name = {a.name: a for a in appliances}
-    solar = dict(zip(daily_profile["hour"], daily_profile["solar_kwh"]))
-    price = dict(zip(daily_profile["hour"], daily_profile["price_per_kwh"]))
-    total = 0.0
-    for name, hour in schedule.items():
-        app = by_name.get(name)
-        if app is None or hour not in solar:
+
+def _bill_from_load(load: List[float], solar: List[float]) -> float:
+    """Monthly EVN bill from a daily load profile. Solar self-consumption per hour is
+    min(load[h], solar[h]) — only the part of the load NOT covered by rooftop solar is bought
+    from the grid; that monthly grid total is charged through calc's tiered tariff."""
+    daily_total = sum(load)
+    daily_self = sum(min(load[h], solar[h]) for h in range(24))
+    monthly_grid = max(0.0, (daily_total - daily_self) * 30.0)
+    return calc.calculate_bill(monthly_grid)
+
+
+def _worst_solar_schedule(flexible: List, solar: List[float]) -> dict:
+    """Each flexible appliance at its LEAST-sunny candidate hour — the un-optimized 'before'
+    baseline that Q-SmartEnergy improves on by shifting these loads into solar hours."""
+    def run_solar(hour: int, duration: float) -> float:
+        total, remaining, k = 0.0, duration, 0
+        while remaining > 1e-9:
+            total += solar[(hour + k) % 24] * min(1.0, remaining)
+            remaining -= 1.0
+            k += 1
+        return total
+
+    worst = {}
+    for app in flexible:
+        cands = app.candidate_hours or (0,)
+        worst[app.name] = min(cands, key=lambda h: run_solar(h, app.duration_hours))
+    return worst
+
+
+def _compute_schedule_bills(flex_after: dict, fixed_hours: dict, appliances: List, profile):
+    """bill_before/after and monthly kWh from the actual whole-house schedule. Both bills use
+    the SAME fixed-appliance usage, so the savings isolate the value of optimizing flexible
+    loads into solar hours; turning appliances off (fewer hours) lowers both bills (real
+    consumption drops). Returns (bill_before, bill_after, savings_percent, monthly_kwh)."""
+    solar = [float(s) for s in profile["solar_kwh"]]
+    flexible = [a for a in appliances if a.is_flexible]
+    flex_before = _worst_solar_schedule(flexible, solar)
+
+    load_after = _hourly_load(flex_after, fixed_hours, appliances)
+    load_before = _hourly_load(flex_before, fixed_hours, appliances)
+    bill_after = _bill_from_load(load_after, solar)
+    bill_before = _bill_from_load(load_before, solar)
+    monthly_kwh = sum(load_after) * 30.0
+    savings = (bill_before - bill_after) / bill_before * 100 if bill_before > 0 else 0.0
+    return bill_before, bill_after, savings, monthly_kwh
+
+
+def _default_fixed_hours(appliances: List) -> dict:
+    """Expand each fixed appliance's realistic usage windows into a flat list of ON hours."""
+    result = {}
+    for app in appliances:
+        if app.is_flexible:
             continue
-        energy_kwh = app.power_w / 1000.0 * app.duration_hours
-        total += min(energy_kwh, float(solar[hour])) * float(price[hour])
-    return total
+        hours = []
+        for start, length in usage_windows(app):
+            hours.extend((start + k) % 24 for k in range(length))
+        result[app.name] = sorted(set(hours))
+    return result
 
 
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
@@ -172,19 +229,15 @@ def optimize(
     for name, hour in pinned_to_apply.items():
         result.schedule[name] = hour
 
-    # Per-user bill. bill_before is the un-optimized baseline (user's own monthly total with
-    # the documented SELF_CONSUMPTION_BEFORE solar self-consumption). bill_after subtracts the
-    # incremental monthly saving from scheduling flexible loads into solar hours, valued with
-    # the SAME min(energy, solar)*price economics the QUBO/QAOA minimized over `profile` — so
-    # the displayed savings are derived from the optimizer's objective, and dragging an
-    # appliance (or changing weather / day_of_month) moves the bill exactly as QAOA would.
-    user_monthly_kwh = total_monthly_kwh(user_appliances)
-    grid_before = max(0.0, calc.grid_purchase_kwh(calc.SELF_CONSUMPTION_BEFORE, user_monthly_kwh))
-    bill_before = calc.calculate_bill(grid_before)
-
-    monthly_solar_savings = _daily_solar_savings_vnd(result.schedule, user_appliances, profile) * 30.0
-    bill_after = max(0.0, bill_before - monthly_solar_savings)
-    savings_percent = (bill_before - bill_after) / bill_before * 100 if bill_before > 0 else 0.0
+    # Per-user bill from the ACTUAL whole-house schedule: every appliance's real usage (fixed
+    # appliances at their default usage hours, flexible at the optimized hour) is laid against
+    # the solar curve, and only the grid-purchased remainder is charged through the EVN tiers.
+    # bill_before runs the flexible loads at their least-sunny hour, so savings isolate the
+    # value of optimizing into solar; using fewer hours lowers real consumption and both bills.
+    default_fixed_hours = _default_fixed_hours(user_appliances)
+    bill_before, bill_after, savings_percent, user_monthly_kwh = _compute_schedule_bills(
+        result.schedule, default_fixed_hours, user_appliances, profile
+    )
 
     # Fixed appliances' realistic usage windows for the Gantt (flexible ones are already in
     # result.schedule at their optimized hour). Each fixed appliance can run in several disjoint
@@ -227,6 +280,41 @@ def optimize(
         bill_before_vnd=bill_before, bill_after_vnd=bill_after,
         savings_percent=savings_percent, gantt_chart_png=gantt_png, bill_chart_png=bill_png,
         fixed_windows=fixed_windows,
+    )
+
+
+class RecomputeBillRequest(BaseModel):
+    day_of_month: int = 9
+    weather_condition: str = "sunny"
+    schedule: Dict[str, int] = {}          # flexible appliance name -> chosen hour
+    fixed_hours: Dict[str, List[int]] = {}  # fixed appliance name -> list of ON hours
+
+
+class BillOut(BaseModel):
+    bill_before_vnd: float
+    bill_after_vnd: float
+    savings_percent: float
+    monthly_kwh: float
+
+
+@router.post("/recompute-bill", response_model=BillOut)
+def recompute_bill(
+    payload: RecomputeBillRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Recompute the bill from an edited schedule WITHOUT re-running QAOA. Used when the user
+    toggles fixed-appliance usage hours on the Gantt grid: their real consumption changes, so
+    the bill must follow, but the quantum optimization of flexible loads is unchanged."""
+    rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
+    user_appliances = _db_rows_to_appliances(rows)
+    profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
+    bill_before, bill_after, savings_percent, monthly_kwh = _compute_schedule_bills(
+        payload.schedule, payload.fixed_hours, user_appliances, profile
+    )
+    return BillOut(
+        bill_before_vnd=bill_before, bill_after_vnd=bill_after,
+        savings_percent=savings_percent, monthly_kwh=monthly_kwh,
     )
 
 

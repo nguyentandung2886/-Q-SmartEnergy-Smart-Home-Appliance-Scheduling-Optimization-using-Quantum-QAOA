@@ -67,6 +67,12 @@ export async function qaoaAnalysis(params) {
   return data;
 }
 
+// Recompute bill from an edited schedule (fixed-hour toggles) without re-running QAOA
+export async function recomputeBill(params) {
+  const { data } = await apiClient.post("/recompute-bill", params);
+  return data;
+}
+
 // Returns raw fetch Response (not axios) — needed for SSE ReadableStream
 export function explainSchedule(payload) {
   return fetch(`${API_BASE_URL}/explain`, {

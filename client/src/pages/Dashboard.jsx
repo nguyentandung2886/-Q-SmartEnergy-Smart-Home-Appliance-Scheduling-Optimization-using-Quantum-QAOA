@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   createAppliance, deleteAppliance, getAppliances,
   optimize as apiOptimize, updateAppliance, explainSchedule, forecastDurations, qaoaAnalysis,
+  recomputeBill,
 } from "../api";
 import { useAuth } from "../AuthContext";
 import { useCountUp } from "../useCountUp";
@@ -172,13 +173,15 @@ export default function Dashboard() {
   const [analyzing, setAnalyzing] = useState(false);
   const [fixedHours, setFixedHours] = useState({}); // {name: number[]} editable ON hours per fixed appliance
   const debounceRef = useRef(null);
+  const billDebounceRef = useRef(null);
   const { logout } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => { loadAppliances(); }, []);
 
-  // Expand the backend's compact usage windows into per-appliance ON-hour lists whenever a new
-  // optimization result arrives. Users then edit these hour-by-hour in the Gantt grid.
+  // Expand the backend's compact usage windows into per-appliance ON-hour lists when a NEW
+  // optimization arrives (keyed on result.id so a bill recompute doesn't reset the user's edits).
+  // Users then edit these hour-by-hour in the Gantt grid.
   useEffect(() => {
     if (!result) return;
     const expanded = {};
@@ -190,7 +193,7 @@ export default function Dashboard() {
       expanded[name] = [...hours].sort((a, b) => a - b);
     }
     setFixedHours(expanded);
-  }, [result]);
+  }, [result?.id]);
 
   async function loadAppliances() {
     try {
@@ -283,6 +286,33 @@ export default function Dashboard() {
     setPinnedSchedule(newPinned);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => runOptimize(newPinned), 400);
+  }
+
+  // User toggled a fixed appliance's usage hours: update the grid immediately, then recompute
+  // the bill (debounced) from the actual schedule — no re-optimization, just real consumption.
+  function handleFixedHoursChange(newFixedHours) {
+    setFixedHours(newFixedHours);
+    if (billDebounceRef.current) clearTimeout(billDebounceRef.current);
+    billDebounceRef.current = setTimeout(async () => {
+      if (!result) return;
+      try {
+        const data = await recomputeBill({
+          day_of_month: Number(dayOfMonth),
+          weather_condition: weather,
+          schedule: result.schedule,
+          fixed_hours: newFixedHours,
+        });
+        setResult((prev) => prev && {
+          ...prev,
+          bill_before_vnd: data.bill_before_vnd,
+          bill_after_vnd: data.bill_after_vnd,
+          savings_percent: data.savings_percent,
+          monthly_kwh: data.monthly_kwh,
+        });
+      } catch {
+        /* leave the previous bill in place on error */
+      }
+    }, 400);
   }
 
   async function handleAnalyze() {
@@ -536,7 +566,7 @@ export default function Dashboard() {
               fixedHours={fixedHours}
               appliances={appliances}
               onPinnedChange={handlePinnedChange}
-              onFixedHoursChange={setFixedHours}
+              onFixedHoursChange={handleFixedHoursChange}
               disabled={reoptimizing}
             />
             <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
