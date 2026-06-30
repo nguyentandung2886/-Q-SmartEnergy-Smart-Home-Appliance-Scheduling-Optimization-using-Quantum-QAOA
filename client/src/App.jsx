@@ -6,6 +6,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
+import Landing from "./pages/Landing";
+import AnimatedBackground from "./components/AnimatedBackground";
 import "./App.css";
 
 function RequireAuth({ children }) {
@@ -18,11 +20,12 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>
   );
@@ -31,6 +34,7 @@ function AnimatedRoutes() {
 function App() {
   return (
     <ErrorBoundary>
+      <AnimatedBackground />
       <AuthProvider>
         <AnimatedRoutes />
       </AuthProvider>

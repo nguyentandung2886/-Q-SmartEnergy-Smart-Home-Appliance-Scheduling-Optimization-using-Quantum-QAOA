@@ -9,6 +9,7 @@ export default function GanttEditor({
   onPinnedChange,
   onFixedHoursChange,
   disabled,
+  simulatedTime = null,
 }) {
   // Flexible appliances: a single block at the QAOA hour, dragged within candidate hours
   // (drag re-optimizes). Fixed appliances: a 24-cell ON/OFF grid the user clicks to set their
@@ -100,6 +101,12 @@ export default function GanttEditor({
               {h}
             </div>
           ))}
+          {simulatedTime !== null && (
+            <div 
+              className="time-scanner" 
+              style={{ left: `${((simulatedTime + 0.5) / 24) * 100}%` }} 
+            />
+          )}
         </div>
       </div>
 
@@ -142,6 +149,7 @@ export default function GanttEditor({
                   );
                 }
                 // Fixed appliance: clickable ON/OFF cell
+                const isActive = simulatedTime === h && onHours.has(h);
                 return (
                   <div
                     key={h}
@@ -149,6 +157,7 @@ export default function GanttEditor({
                       "gantt-cell",
                       "gantt-cell-clickable",
                       onHours.has(h) ? "gantt-cell-on" : "",
+                      isActive ? "gantt-cell-active" : "",
                     ].filter(Boolean).join(" ")}
                     style={{ gridColumn: h + 1 }}
                     title={`${name}: ${h}h — bấm để ${onHours.has(h) ? "tắt" : "bật"}`}
@@ -157,23 +166,42 @@ export default function GanttEditor({
                 );
               })}
               {/* Flexible appliances get a draggable block on top of the cells */}
-              {flexible && (
-                <div
-                  className={[
-                    "gantt-block",
-                    "gantt-block-flex",
-                    isBeingDragged ? "gantt-block-dragging" : "",
-                  ].filter(Boolean).join(" ")}
-                  style={{
-                    gridColumn: `${blockStart + 1} / span ${blockLen}`,
-                    pointerEvents: isBeingDragged && pointerOff ? "none" : "auto",
-                  }}
-                  draggable={!disabled}
-                  onDragStart={!disabled ? (e) => handleDragStart(e, name) : undefined}
-                  onDragEnd={handleDragEnd}
-                  title={`${name}: ${blockStart}h – ${blockStart + blockLen}h (kéo để tối ưu lại)`}
-                />
-              )}
+              {flexible && (() => {
+                const len1 = Math.min(blockLen, 24 - blockStart);
+                const len2 = blockStart + blockLen > 24 ? (blockStart + blockLen - 24) : 0;
+                const renderBlock = (start, len, isPart2) => {
+                  const isActive = simulatedTime !== null && simulatedTime >= start && simulatedTime < start + len;
+                  return (
+                    <div
+                      key={`block-${isPart2 ? '2' : '1'}`}
+                      className={[
+                        "gantt-block",
+                        "gantt-block-flex",
+                        isBeingDragged ? "gantt-block-dragging" : "",
+                        isActive ? "gantt-block-active" : "",
+                      ].filter(Boolean).join(" ")}
+                      style={{
+                        gridColumn: `${start + 1} / span ${len}`,
+                        pointerEvents: isBeingDragged && pointerOff ? "none" : "auto",
+                        borderLeft: isPart2 ? "none" : undefined,
+                        borderRight: (len2 > 0 && !isPart2) ? "none" : undefined,
+                        opacity: isPart2 ? 0.7 : 1, // Slight visual cue for the wrapped part
+                      }}
+                      draggable={!disabled && !isPart2} // Only main block is draggable
+                      onDragStart={!disabled && !isPart2 ? (e) => handleDragStart(e, name) : undefined}
+                      onDragEnd={!isPart2 ? handleDragEnd : undefined}
+                      title={`${name}: ${blockStart}h – ${(blockStart + blockLen) % 24 || 24}h (kéo để tối ưu lại)`}
+                    />
+                  );
+                };
+
+                return (
+                  <>
+                    {renderBlock(blockStart, len1, false)}
+                    {len2 > 0 && renderBlock(0, len2, true)}
+                  </>
+                );
+              })()}
             </div>
           </div>
         );

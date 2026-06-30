@@ -42,16 +42,16 @@ export default function OptimizePanel({
   return (
     <>
       {/* ML duration forecasting (classical layer feeding QAOA) */}
-      <div className="section-card">
-        <h2>🔮 Dự báo thời gian chạy (ML cổ điển)</h2>
+      <div className="section-card glass-panel">
+        <h2>Dự báo thời gian chạy (ML cổ điển)</h2>
         <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "-0.5rem" }}>
           Mô hình hồi quy tuyến tính (numpy, tự cài) học từ đặc trưng công việc để dự báo thời
           lượng chạy, rồi đưa vào QAOA — lớp classical cấp dữ liệu cho lớp lượng tử.
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
           {FLEX_FORECAST.map((a) => (
-            <div key={a.name} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: "0.75rem", minWidth: 210 }}>
-              <strong style={{ fontSize: "0.9rem" }}>{a.name}</strong>
+            <div key={a.name} className="forecast-card glass-panel" style={{ minWidth: 210, padding: "1rem", flex: "1 1 210px" }}>
+              <strong style={{ fontSize: "1rem", color: "var(--quantum)", display: "block", marginBottom: "0.5rem" }}>{a.name}</strong>
               {a.fields.map((f) => (
                 <label key={f.key} style={{ display: "block", fontSize: "0.8rem", marginTop: "0.5rem" }}>
                   {f.label}
@@ -59,6 +59,7 @@ export default function OptimizePanel({
                     <select
                       value={forecastInputs[a.name][f.key]}
                       onChange={(e) => setForecastField(a.name, f.key, e.target.value)}
+                      style={{ marginTop: "0.3rem", width: "100%", background: "rgba(0, 0, 0, 0.3)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
                     >
                       {f.options.map((o) => (
                         <option key={o} value={o}>{PROGRAM_LABELS[o]}</option>
@@ -69,31 +70,32 @@ export default function OptimizePanel({
                       type="number" min={f.min} max={f.max} step={f.step}
                       value={forecastInputs[a.name][f.key]}
                       onChange={(e) => setForecastField(a.name, f.key, Number(e.target.value))}
+                      style={{ marginTop: "0.3rem", width: "100%", background: "rgba(0, 0, 0, 0.3)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
                     />
                   )}
                 </label>
               ))}
               {forecasts[a.name] && (
-                <div style={{ marginTop: "0.5rem", fontSize: "0.82rem", color: "var(--teal)", fontWeight: 600 }}>
-                  ⏱ {forecasts[a.name].predicted_hours}h
-                  <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> (MAE {forecasts[a.name].test_mae}h)</span>
+                <div style={{ marginTop: "1rem", padding: "0.5rem", background: "rgba(6, 182, 212, 0.1)", borderRadius: "6px", border: "1px solid rgba(6, 182, 212, 0.3)", fontSize: "0.85rem", color: "var(--teal)", fontWeight: 600, textAlign: "center" }}>
+                  Dự kiến: {forecasts[a.name].predicted_hours}h
+                  <div style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: "0.75rem", marginTop: "0.2rem" }}>Độ lệch (MAE): {forecasts[a.name].test_mae}h</div>
                 </div>
               )}
             </div>
           ))}
         </div>
-        <button onClick={onForecast} disabled={forecasting} style={{ marginTop: "0.75rem" }}>
-          {forecasting ? "⏳ Đang dự báo..." : "🔮 Dự báo & áp dụng"}
+        <button className="btn-primary" onClick={onForecast} disabled={forecasting} style={{ marginTop: "1.2rem", width: "100%", maxWidth: "300px" }}>
+          {forecasting ? "Đang phân tích dữ liệu..." : "Chạy mô hình dự báo AI"}
         </button>
         {Object.keys(forecasts).length > 0 && (
-          <span style={{ marginLeft: "0.75rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            Thời lượng dự báo sẽ được dùng khi bấm Tối ưu hóa.
-          </span>
+          <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+            Thời lượng dự báo đã được cập nhật. Hãy nhấn <strong>Tối ưu hóa</strong> để áp dụng.
+          </div>
         )}
       </div>
 
       {/* Optimize controls */}
-      <div className="section-card">
+      <div className="section-card glass-panel">
         <h2>Tối ưu hóa lịch chạy</h2>
         <div className="optimize-controls">
           <label>
@@ -103,11 +105,39 @@ export default function OptimizePanel({
           </label>
           <label>
             Thời tiết hôm nay
-            <select value={weather} onChange={(e) => setWeather(e.target.value)}>
-              {WEATHER_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <select value={weather} onChange={(e) => setWeather(e.target.value)}>
+                {WEATHER_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ padding: "0 10px", fontSize: "0.85rem" }}
+                title="Lấy thời tiết thực tế từ GPS"
+                onClick={async () => {
+                  try {
+                    const { getLiveWeather } = await import("../api");
+                    navigator.geolocation.getCurrentPosition(
+                      async (pos) => {
+                        const condition = await getLiveWeather(pos.coords.latitude, pos.coords.longitude);
+                        setWeather(condition.condition);
+                      },
+                      async () => {
+                        // Fallback to TP.HCM if GPS denied
+                        const condition = await getLiveWeather(10.823, 106.6297);
+                        setWeather(condition.condition);
+                      }
+                    );
+                  } catch (e) {
+                    console.error("Live weather failed:", e);
+                  }
+                }}
+              >
+                Live
+              </button>
+            </div>
           </label>
           <motion.button
             className="btn-optimize"
@@ -124,9 +154,9 @@ export default function OptimizePanel({
             initial={{ opacity: 0 }}
             animate={{ opacity: [0.4, 1, 0.4] }}
             transition={{ repeat: Infinity, duration: 1.2 }}
-            style={{ marginTop: "0.75rem", color: "var(--indigo)", fontWeight: 600 }}
+            style={{ marginTop: "1rem", color: "var(--quantum)", fontWeight: 600, textShadow: "0 0 10px var(--quantum-glow)" }}
           >
-            ⚡ Thuật toán lượng tử đang xử lý...
+            ⚡ Quantum Engine is calculating optimal superposition...
           </motion.div>
         )}
         {error && <p className="auth-error" style={{ marginTop: "0.75rem" }}>{error}</p>}

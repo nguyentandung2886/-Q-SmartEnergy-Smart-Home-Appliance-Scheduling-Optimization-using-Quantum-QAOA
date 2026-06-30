@@ -1,11 +1,20 @@
-/* Global baseline. App-level styling (palette, layout, components) lives in App.css. */
+/* Cinematic Quantum Energy Baseline */
+
 :root {
-  font-family: "Inter", system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark;
 }
 
 #root {
   min-height: 100svh;
+  background-color: #050511;
+  position: relative;
+  z-index: 1;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Inter", sans-serif;
 }

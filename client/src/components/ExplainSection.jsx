@@ -14,7 +14,7 @@ export default function ExplainSection({ explainText, explainLoading, onExplain 
         whileHover={{ scale: explainLoading ? 1 : 1.03 }}
         whileTap={{ scale: explainLoading ? 1 : 0.97 }}
       >
-        ✨ Giải thích kết quả
+        Hệ thống lấy insight
       </motion.button>
 
       {explainLoading && (
@@ -28,13 +28,13 @@ export default function ExplainSection({ explainText, explainLoading, onExplain 
             fontSize: "0.85rem",
           }}
         >
-          ⟳ Gemini đang phân tích...
+          Hệ thống đang lấy insight và đưa ra khuyến nghị...
         </motion.div>
       )}
 
       {explainText && (
         <div className="explain-card">
-          <strong>💡 Phân tích kết quả</strong>
+          <strong>Phân tích kết quả</strong>
           <p style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
             {explainText}
           </p>

@@ -33,7 +33,7 @@ export default function Login() {
       exit={{ opacity: 0, y: -16 }}
       transition={{ duration: 0.25 }}
     >
-      <form onSubmit={handleSubmit} className="auth-form">
+      <form onSubmit={handleSubmit} className="auth-form glass-panel">
         <h1>Q-SmartEnergy</h1>
         <p style={{ textAlign: "center", color: "var(--text-muted)" }}>
           Tiết kiệm điện thông minh bằng AI lượng tử

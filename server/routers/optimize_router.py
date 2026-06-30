@@ -86,7 +86,10 @@ def _hourly_load(flex_schedule: dict, fixed_hours: dict, appliances: List) -> Li
         if app.is_flexible:
             hour = flex_schedule.get(app.name)
             if hour is None:
-                continue
+                # Not in the optimized schedule (e.g. no candidate hours): fall back to a
+                # candidate hour so its energy is still counted — never silently drop load,
+                # or before/after totals diverge and savings become meaningless.
+                hour = app.candidate_hours[0] if app.candidate_hours else 0
             remaining = app.duration_hours
             k = 0
             while remaining > 1e-9:
@@ -158,6 +161,20 @@ def _default_fixed_hours(appliances: List) -> dict:
     return result
 
 
+def _coerce_unoptimizable_to_fixed(appliances: List[Appliance]) -> List[Appliance]:
+    """A flexible appliance needs >= 2 candidate hours to become a QUBO decision variable.
+    Without them the optimizer can't schedule it, so it would vanish from the optimized
+    ('after') load while the worst-solar ('before') baseline still counts it at a fallback
+    hour — conjuring impossible savings (energy must be conserved between before and after).
+    Treat such appliances as fixed loads so their consumption is billed consistently in both."""
+    return [
+        replace(a, is_flexible=False, candidate_hours=())
+        if a.is_flexible and len(a.candidate_hours) < 2
+        else a
+        for a in appliances
+    ]
+
+
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
     result = []
     for row in rows:
@@ -178,7 +195,7 @@ def optimize(
     db: Session = Depends(get_db),
 ):
     rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
-    user_appliances = _db_rows_to_appliances(rows)
+    user_appliances = _coerce_unoptimizable_to_fixed(_db_rows_to_appliances(rows))
 
     # Apply ML-forecasted durations (from /forecast) before building the QUBO: duration drives
     # energy_kwh, which sits in both QUBO value axes and the Gantt block length.
@@ -290,6 +307,7 @@ class RecomputeBillRequest(BaseModel):
     weather_condition: Literal["sunny", "cloudy", "rainy"] = "sunny"
     schedule: Dict[str, int] = {}          # flexible appliance name -> chosen hour
     fixed_hours: Dict[str, List[int]] = {}  # fixed appliance name -> list of ON hours
+    duration_overrides: Optional[Dict[str, float]] = None
 
 
 class BillOut(BaseModel):
@@ -309,7 +327,17 @@ def recompute_bill(
     toggles fixed-appliance usage hours on the Gantt grid: their real consumption changes, so
     the bill must follow, but the quantum optimization of flexible loads is unchanged."""
     rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
-    user_appliances = _db_rows_to_appliances(rows)
+    user_appliances = _coerce_unoptimizable_to_fixed(_db_rows_to_appliances(rows))
+    
+    overrides = payload.duration_overrides or {}
+    if overrides:
+        user_appliances = [
+            replace(a, duration_hours=float(overrides[a.name]))
+            if a.name in overrides and float(overrides[a.name]) > 0
+            else a
+            for a in user_appliances
+        ]
+
     profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
     bill_before, bill_after, savings_percent, monthly_kwh = _compute_schedule_bills(
         payload.schedule, payload.fixed_hours, user_appliances, profile
@@ -358,7 +386,7 @@ def qaoa_analysis(
         return QaoaAnalysisOut(num_appliances=0, num_variables=0, brute_force_energy=None, configs=[])
 
     _, brute_force_energy = solve_classical_bruteforce(scheduler.Q)
-    raw = compare_qaoa_hyperparameters(scheduler.Q)
+    raw = compare_qaoa_hyperparameters(scheduler.Q, var_map=scheduler.var_map)
     configs = [
         QaoaConfigResult(
             reps=r["reps"], maxiter=r["maxiter"], energy=r["energy"],

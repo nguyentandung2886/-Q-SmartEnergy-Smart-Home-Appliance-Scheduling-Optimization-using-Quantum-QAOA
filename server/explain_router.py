@@ -80,11 +80,26 @@ def _stream_explanation(prompt: str):
     yield "data: [DONE]\n\n"
 
 
+import re
+
+_PROMPT_INJECTION_KEYWORDS = re.compile(
+    r"(bỏ qua lệnh|translate|ignore|tạm dừng|quên đi|đóng vai|giả vờ|hãy nói|reset|bạn là)",
+    re.IGNORECASE
+)
+
 @router.post("/explain")
 def explain(
     payload: ExplainRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # Lọc Prompt Injection từ tên thiết bị
+    for app in payload.appliances:
+        if _PROMPT_INJECTION_KEYWORDS.search(app.name):
+            async def _fake_stream():
+                yield "data: ⚠️ Hệ thống phát hiện từ khóa không hợp lệ trong tên thiết bị (có dấu hiệu Prompt Injection). Yêu cầu giải thích bị từ chối.\n\n"
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(_fake_stream(), media_type="text/event-stream")
+
     prompt = _build_prompt(payload)
     return StreamingResponse(
         _stream_explanation(prompt),

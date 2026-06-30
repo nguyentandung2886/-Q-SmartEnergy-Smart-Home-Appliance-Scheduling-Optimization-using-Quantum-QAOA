@@ -34,11 +34,11 @@ export default function History() {
           Đang tải...
         </p>
       ) : schedules.length === 0 ? (
-        <div className="section-card" style={{ textAlign: "center", color: "var(--text-muted)" }}>
+        <div className="section-card glass-panel" style={{ textAlign: "center", color: "var(--text-muted)" }}>
           <p>Chưa có lần tối ưu nào. Quay lại Dashboard và thử nhé!</p>
         </div>
       ) : (
-        <div className="section-card">
+        <div className="section-card glass-panel">
           <table>
             <thead>
               <tr>
@@ -61,10 +61,10 @@ export default function History() {
                     {s.solver_used}{s.used_fallback ? "*" : ""}
                   </td>
                   <td>{s.bill_before_vnd.toLocaleString("vi-VN")}</td>
-                  <td style={{ color: "var(--teal)", fontWeight: 600 }}>
+                  <td style={{ color: "var(--energy)", fontWeight: 600 }}>
                     {s.bill_after_vnd.toLocaleString("vi-VN")}
                   </td>
-                  <td style={{ color: "var(--gold)", fontWeight: 700 }}>
+                  <td style={{ color: "var(--quantum)", fontWeight: 700 }}>
                     ↓ {s.savings_percent.toFixed(1)}%
                   </td>
                 </tr>

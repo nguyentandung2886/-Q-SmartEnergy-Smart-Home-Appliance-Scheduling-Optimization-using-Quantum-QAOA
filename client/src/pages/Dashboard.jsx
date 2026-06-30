@@ -53,7 +53,7 @@ export default function Dashboard() {
       expanded[name] = [...hours].sort((a, b) => a - b);
     }
     setFixedHours(expanded);
-  }, [result?.id]);
+  }, [result?._runId]);
 
   async function loadAppliances() {
     try {
@@ -105,6 +105,7 @@ export default function Dashboard() {
     setError("");
     if (isDrag) {
       setReoptimizing(true);
+      setExplainText(""); // Reset explanation on drag so overload alert can trigger again
     } else {
       setLoading(true);
       setResult(null);
@@ -119,7 +120,7 @@ export default function Dashboard() {
         ...(Object.keys(durationOverrides).length ? { duration_overrides: durationOverrides } : {}),
         ...(isDrag ? { pinned_schedule: pinned } : {}),
       });
-      setResult(data);
+      setResult({ ...data, _runId: Date.now() });
     } catch {
       setError("Lỗi khi tối ưu hóa. Kiểm tra backend đã chạy chưa?");
     } finally {
@@ -147,6 +148,7 @@ export default function Dashboard() {
           weather_condition: weather,
           schedule: result.schedule,
           fixed_hours: newFixedHours,
+          ...(Object.keys(durationOverrides).length ? { duration_overrides: durationOverrides } : {}),
         });
         setResult((prev) => prev && {
           ...prev,
@@ -237,7 +239,7 @@ export default function Dashboard() {
       <header className="dashboard-header">
         <h1>Q-SmartEnergy</h1>
         <nav>
-          <button onClick={() => navigate("/history")}>📋 Lịch sử</button>
+          <button onClick={() => navigate("/history")}>Lịch sử</button>
           <button onClick={handleLogout}>Đăng xuất</button>
         </nav>
       </header>
@@ -253,16 +255,16 @@ export default function Dashboard() {
       <OptimizePanel
         dayOfMonth={dayOfMonth}
         setDayOfMonth={setDayOfMonth}
-        weather={weather}
-        setWeather={setWeather}
-        loading={loading}
-        error={error}
-        onOptimize={() => runOptimize()}
-        forecastInputs={forecastInputs}
-        setForecastField={setForecastField}
-        forecasts={forecasts}
-        forecasting={forecasting}
-        onForecast={handleForecast}
+          weather={weather}
+          setWeather={setWeather}
+          loading={loading}
+          error={error}
+          onOptimize={() => runOptimize()}
+          forecastInputs={forecastInputs}
+          setForecastField={setForecastField}
+          forecasts={forecasts}
+          forecasting={forecasting}
+          onForecast={handleForecast}
       />
 
       <AnimatePresence>

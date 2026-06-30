@@ -68,11 +68,44 @@ def solve_classical_bruteforce(Q: np.ndarray) -> Tuple[str, float]:
     return best_bitstring, best_energy
 
 
+def solve_greedy(Q: np.ndarray, var_map: Dict[int, Tuple[str, int]]) -> str:
+    """Thuật toán Tham lam (Greedy) siêu tốc (0.01s) để tìm một bitstring 'tạm ổn' hợp lệ.
+    Dùng để làm Initial State (Warm-Start) cho QAOA thay vì khởi tạo ngẫu nhiên.
+    Nhóm theo thiết bị, chọn giờ có chi phí tuyến tính + chi phí bậc hai (với các thiết bị 
+    đã chọn trước đó) thấp nhất.
+    """
+    n = Q.shape[0]
+    bitstring = ['0'] * n
+    
+    # Group biến theo thiết bị
+    app_vars = {}
+    for idx, (name, hour) in var_map.items():
+        app_vars.setdefault(name, []).append(idx)
+        
+    for name, indices in app_vars.items():
+        best_idx = -1
+        best_cost = float('inf')
+        for idx in indices:
+            cost = Q[idx, idx]
+            for i in range(n):
+                if bitstring[i] == '1':
+                    # Q is upper triangular
+                    cost += Q[min(i, idx), max(i, idx)]
+            if cost < best_cost:
+                best_cost = cost
+                best_idx = idx
+        if best_idx != -1:
+            bitstring[best_idx] = '1'
+            
+    return "".join(bitstring)
+
+
 def solve_qaoa(
     Q: np.ndarray,
     reps: int = 1,
     maxiter: int = 50,
     seed: int = 42,
+    initial_bitstring: str = None,
 ) -> Tuple[str, float]:
     """Giải QUBO bằng QAOA trên Aer Simulator (recipe đã verify cho bộ version này).
 
@@ -114,7 +147,17 @@ def solve_qaoa(
         backend = AerSimulator()
         pm = generate_preset_pass_manager(optimization_level=1, backend=backend)
         sampler = SamplerV2()
-        qaoa = QAOA(sampler=sampler, optimizer=COBYLA(maxiter=maxiter), reps=reps, transpiler=pm)
+
+        # Warm-Start QAOA using greedy bitstring as initial_state
+        initial_state = None
+        if initial_bitstring and len(initial_bitstring) == n:
+            from qiskit import QuantumCircuit
+            initial_state = QuantumCircuit(n)
+            for j in range(n):
+                if initial_bitstring[j] == "1":
+                    initial_state.x(j)
+
+        qaoa = QAOA(sampler=sampler, optimizer=COBYLA(maxiter=maxiter), reps=reps, transpiler=pm, initial_state=initial_state)
         solver = MinimumEigenOptimizer(qaoa)
         result = solver.solve(qp)
 
@@ -270,8 +313,9 @@ class QuantumScheduler:
 
         start = time.perf_counter()
         try:
+            greedy_bitstring = solve_greedy(self.Q, self.var_map)
             bitstring, energy = solve_qaoa(
-                self.Q, reps=self.qaoa_reps, maxiter=self.qaoa_maxiter, seed=self.seed
+                self.Q, reps=self.qaoa_reps, maxiter=self.qaoa_maxiter, seed=self.seed, initial_bitstring=greedy_bitstring
             )
             qaoa_valid = is_valid_one_hot(bitstring, self.var_map)
         except QAOAExecutionError:

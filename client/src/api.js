@@ -73,6 +73,11 @@ export async function recomputeBill(params) {
   return data;
 }
 
+export async function sendAlert(params) {
+  const { data } = await apiClient.post("/alert/", params);
+  return data;
+}
+
 // Returns raw fetch Response (not axios) — needed for SSE ReadableStream
 export function explainSchedule(payload) {
   return fetch(`${API_BASE_URL}/explain`, {
@@ -83,6 +88,12 @@ export function explainSchedule(payload) {
     },
     body: JSON.stringify(payload),
   });
+}
+
+// Fetch live weather from backend
+export async function getLiveWeather(lat, lon) {
+  const { data } = await apiClient.post("/weather", { lat, lon });
+  return data;
 }
 
 export default apiClient;

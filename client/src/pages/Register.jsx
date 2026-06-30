@@ -34,7 +34,7 @@ export default function Register() {
       exit={{ opacity: 0, y: -16 }}
       transition={{ duration: 0.25 }}
     >
-      <form onSubmit={handleSubmit} className="auth-form">
+      <form onSubmit={handleSubmit} className="auth-form glass-panel">
         <h1>Tạo tài khoản</h1>
         {error && <p className="auth-error">{error}</p>}
         <label>

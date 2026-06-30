@@ -46,14 +46,17 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
         <button
           onClick={toggleFlexible}
           style={{
-            background: "none", cursor: "pointer", padding: "2px 6px",
-            borderRadius: "4px", fontSize: "0.8rem", fontWeight: 600,
-            color: appliance.is_flexible ? "var(--teal)" : "var(--text-muted)",
-            border: `1px solid ${appliance.is_flexible ? "var(--teal)" : "#d1d5db"}`,
+            background: appliance.is_flexible ? "rgba(6, 182, 212, 0.1)" : "rgba(255, 255, 255, 0.05)",
+            cursor: "pointer", padding: "4px 8px",
+            borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600,
+            color: appliance.is_flexible ? "var(--quantum)" : "var(--text-muted)",
+            border: `1px solid ${appliance.is_flexible ? "var(--quantum)" : "rgba(255, 255, 255, 0.2)"}`,
+            boxShadow: appliance.is_flexible ? "0 0 10px rgba(6, 182, 212, 0.3)" : "none",
+            transition: "all 0.2s"
           }}
           title="Bấm để đổi loại"
         >
-          {appliance.is_flexible ? "Linh hoạt" : "Cố định"}
+          {appliance.is_flexible ? "⚡ Linh hoạt" : "🔒 Cố định"}
         </button>
       </td>
       <td>
@@ -83,7 +86,7 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
   }
 
   return (
-    <div className="section-card">
+    <div className="section-card glass-panel">
       <h2>Thiết bị của bạn — tổng ~{totalKwh.toFixed(0)} kWh/tháng</h2>
       <table>
         <thead>

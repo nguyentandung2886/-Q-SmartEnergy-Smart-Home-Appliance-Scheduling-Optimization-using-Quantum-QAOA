@@ -17,9 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine
 
-# SQLite stores TEXT as Unicode natively, so create_all builds the complete
-# current schema for a fresh DB — no per-column ALTER TABLE migrations needed.
-Base.metadata.create_all(bind=engine)
+# Removed Base.metadata.create_all(bind=engine) to strictly enforce Alembic migrations.
 
 app = FastAPI(title="Q-SmartEnergy API", version="1.0.0")
 
@@ -37,12 +35,15 @@ app.add_middleware(
 from routers import auth_router, appliances_router, optimize_router
 import explain_router
 import forecast_router
+from routers import weather_router, alert_router
 
 app.include_router(auth_router.router)
 app.include_router(appliances_router.router)
 app.include_router(optimize_router.router)
 app.include_router(explain_router.router)
 app.include_router(forecast_router.router)
+app.include_router(weather_router.router)
+app.include_router(alert_router.router)
 
 
 @app.get("/")

@@ -1,7 +1,11 @@
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useCountUp } from "../useCountUp";
 import GanttEditor from "./GanttEditor";
+import { sendAlert } from "../api";
 import ExplainSection from "./ExplainSection";
+import BillChart from "./BillChart";
+import html2pdf from "html2pdf.js";
 
 // Ngưỡng công suất đồng thời an toàn của hộ gia đình (khớp power_threshold_w trong QUBO H_power).
 const SAFE_POWER_W = 5000;
@@ -76,17 +80,105 @@ export default function ResultsPanel({
   explainLoading,
   onExplain,
 }) {
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulatedTime, setSimulatedTime] = useState(0);
+  const [alertEmail, setAlertEmail] = useState("");
+  const [alertPhone, setAlertPhone] = useState("");
+  const [alertStatus, setAlertStatus] = useState(null);
+  const [sendingAlert, setSendingAlert] = useState(false);
+
+  // Auto-explain on overload
+  const peak = computePeakPower(result.schedule, fixedHours, appliances);
+  const overload = peak.peakW > SAFE_POWER_W;
+
+  useEffect(() => {
+    if (overload && !explainText && !explainLoading) {
+      onExplain();
+    }
+  }, [overload, explainText, explainLoading, onExplain]);
+
+  // IoT Simulator Timer
+  useEffect(() => {
+    let interval;
+    if (isSimulating) {
+      interval = setInterval(() => {
+        setSimulatedTime((prev) => (prev >= 23 ? 0 : prev + 1));
+      }, 800); // 0.8s per hour
+    } else {
+      setSimulatedTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [isSimulating]);
+
+  const handleSendAlert = async () => {
+    setSendingAlert(true);
+    try {
+      await sendAlert({
+        email: alertEmail || null,
+        phone: alertPhone || null,
+        bill_before: result.bill_before_vnd,
+        bill_after: result.bill_after_vnd,
+        savings_percent: result.savings_percent
+      });
+      setAlertStatus({ type: "success", msg: "Cảnh báo đã được gửi thành công!" });
+    } catch (err) {
+      setAlertStatus({ type: "error", msg: "Lỗi gửi cảnh báo. Vui lòng thử lại." });
+    }
+    setSendingAlert(false);
+    setTimeout(() => setAlertStatus(null), 4000);
+  };
+
+  const handleExportPDF = () => {
+    const element = document.getElementById("pdf-content-area");
+    const opt = {
+      margin:       10,
+      filename:     'q-smartenergy-report.pdf',
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#050511' },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+  };
+
+  // Tính toán ESG (Môi trường)
+  const { kwhShifted, co2Reduced, treesPlanted } = useMemo(() => {
+    let shifted = 0;
+    appliances.forEach(a => {
+      if (a.is_flexible) {
+        const optimalHour = result.schedule[a.name];
+        // Nếu dời khỏi giờ cao điểm (17, 18, 19) thì tính là tiết kiệm CO2
+        if (optimalHour !== 17 && optimalHour !== 18 && optimalHour !== 19) {
+          shifted += (a.power_w / 1000) * a.duration_hours * 30; // monthly
+        }
+      }
+    });
+    const co2 = shifted * 0.8; // 0.8 kg CO2/kWh cho điện cao điểm (thường là than/diesel)
+    const trees = co2 / 22; // 1 cây xanh trưởng thành hấp thụ ~22kg CO2/năm
+    return { kwhShifted: shifted, co2Reduced: co2, treesPlanted: trees };
+  }, [appliances, result.schedule]);
+
   return (
     <motion.div
-      className="section-card results-section"
+      className="section-card results-section glass-panel"
       initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
     >
-      <h2>Kết quả</h2>
-      <ResultsBillNumbers
-        billBefore={result.bill_before_vnd}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2>Kết quả</h2>
+        <button 
+          className="btn-primary" 
+          onClick={handleExportPDF}
+          style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)" }}
+        >
+          ⬇️ Xuất Báo cáo PDF
+        </button>
+      </div>
+      
+      <div id="pdf-content-area">
+        <ResultsBillNumbers
+          billBefore={result.bill_before_vnd}
         billAfter={result.bill_after_vnd}
         savingsPct={result.savings_percent}
       />
@@ -106,7 +198,7 @@ export default function ResultsPanel({
             marginBottom: "0.5rem", fontSize: "0.85rem",
           }}
         >
-          ⚡ Đang tính lại lịch...
+          Đang tính lại lịch...
         </motion.div>
       )}
 
@@ -119,45 +211,101 @@ export default function ResultsPanel({
         onPinnedChange={onPinnedChange}
         onFixedHoursChange={onFixedHoursChange}
         disabled={reoptimizing}
+        simulatedTime={simulatedTime}
       />
-      <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
-        ⟳ Tải linh hoạt: kéo khối để tối ưu lại. ⠿ Tải cố định: bấm vào ô giờ để bật/tắt
-        theo nhu cầu thật (có thể nhiều khung giờ rời nhau, vd điều hòa 0-3h rồi 10-13h).
-      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem" }}>
+        <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+          Tải linh hoạt: kéo khối để tối ưu lại. Tải cố định: bấm vào ô giờ để bật/tắt.
+        </p>
+        <button 
+          className="btn-primary" 
+          onClick={() => setIsSimulating(!isSimulating)}
+          style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", background: isSimulating ? "var(--error)" : "var(--quantum)" }}
+        >
+          {isSimulating ? "Dừng giả lập" : "Chạy giả lập (IoT)"}
+        </button>
+      </div>
 
       {/* Power-overload safety check (+8đ Mức Dễ): cảnh báo công suất đồng thời */}
-      {(() => {
-        const peak = computePeakPower(
-          result.schedule,
-          fixedHours,
-          appliances
-        );
-        const overload = peak.peakW > SAFE_POWER_W;
-        return (
-          <div
-            style={{
+      <div
+        className={overload ? "alert-critical" : ""}
+        style={{
               marginTop: "1rem", padding: "0.6rem 0.9rem", borderRadius: 8,
               fontSize: "0.85rem", fontWeight: 600,
-              background: overload ? "#FEF2F2" : "#F0FDF4",
-              color: overload ? "#B91C1C" : "var(--teal)",
-              border: `1px solid ${overload ? "#FCA5A5" : "#86EFAC"}`,
+              background: overload ? "rgba(239, 68, 68, 0.1)" : "rgba(16, 185, 129, 0.1)",
+              color: overload ? "#ef4444" : "var(--energy)",
+              border: `1px solid ${overload ? "rgba(239, 68, 68, 0.3)" : "rgba(16, 185, 129, 0.3)"}`,
+              boxShadow: overload ? "0 0 15px rgba(239, 68, 68, 0.2)" : "0 0 15px var(--energy-glow)",
             }}
           >
-            {overload
-              ? `⚠️ Cảnh báo quá tải: ${peak.peakW.toLocaleString("vi-VN")}W cùng lúc lúc ${peak.peakHour}h (> ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W) — ${peak.names.join(", ")}`
-              : `✓ An toàn công suất: cao nhất ${peak.peakW.toLocaleString("vi-VN")}W lúc ${peak.peakHour}h, dưới ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W`}
-          </div>
-        );
-      })()}
+          {overload
+            ? `CẢNH BÁO CHÁY NỔ: ${peak.peakW.toLocaleString("vi-VN")}W cùng lúc lúc ${peak.peakHour}h (> ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W) — ${peak.names.join(", ")}`
+            : `An toàn công suất: cao nhất ${peak.peakW.toLocaleString("vi-VN")}W lúc ${peak.peakHour}h, dưới ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W`}
+        </div>
 
-      {/* Bill comparison chart (static PNG, unchanged) */}
-      {result.bill_chart_png && (
-        <img
-          src={`data:image/png;base64,${result.bill_chart_png}`}
-          alt="So sánh hóa đơn điện"
-          style={{ marginTop: "1rem" }}
-        />
-      )}
+
+
+      {/* Recharts Area and Pie Chart */}
+      <BillChart appliances={appliances} result={result} fixedHours={fixedHours} />
+
+      {/* ESG Report - Báo cáo Môi trường */}
+      <div className="section-card glass-panel" style={{ marginTop: "1.5rem", background: "rgba(16, 185, 129, 0.05)", borderColor: "rgba(16, 185, 129, 0.2)" }}>
+        <h3 style={{ marginTop: 0, marginBottom: "1rem", color: "var(--energy)" }}>🌍 Báo cáo Môi trường (ESG)</h3>
+        <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+          Thuật toán Lượng tử đã dời các thiết bị tiêu thụ lớn khỏi giờ cao điểm (thời điểm lưới điện phải chạy thêm máy phát điện Diesel/Than ô nhiễm).
+        </p>
+        <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>Điện năng dịch chuyển:</p>
+            <p style={{ margin: "0.2rem 0", fontSize: "1.5rem", fontWeight: "bold", color: "#fff" }}>{kwhShifted.toFixed(1)} <span style={{fontSize: "1rem"}}>kWh/tháng</span></p>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>Khí thải CO2 cắt giảm:</p>
+            <p style={{ margin: "0.2rem 0", fontSize: "1.5rem", fontWeight: "bold", color: "var(--energy)" }}>↓ {co2Reduced.toFixed(1)} <span style={{fontSize: "1rem"}}>kg CO2</span></p>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>Tương đương trồng mới:</p>
+            <p style={{ margin: "0.2rem 0", fontSize: "1.5rem", fontWeight: "bold", color: "#10B981" }}>🌲 {treesPlanted.toFixed(1)} <span style={{fontSize: "1rem"}}>cây xanh</span></p>
+          </div>
+        </div>
+      </div>
+      </div> {/* Đóng thẻ id="pdf-content-area" */}
+
+      {/* Alert Center */}
+      <div className="section-card glass-panel" style={{ marginTop: "1.5rem" }}>
+        <h3 style={{ marginTop: 0, marginBottom: "0.5rem", color: "var(--quantum)" }}>Cảnh báo Tiêu thụ (Email/SMS)</h3>
+        <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+          Hệ thống sẽ tự động gửi email báo cáo tối ưu nếu hóa đơn vượt ngưỡng hoặc công suất bị quá tải.
+        </p>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+          <input 
+            type="email" 
+            placeholder="Nhập Email nhận báo cáo..." 
+            value={alertEmail}
+            onChange={(e) => setAlertEmail(e.target.value)}
+            style={{ padding: "0.5rem", borderRadius: "6px", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", flex: "1 1 200px" }}
+          />
+          <input 
+            type="text" 
+            placeholder="Nhập SĐT (Mock SMS)..." 
+            value={alertPhone}
+            onChange={(e) => setAlertPhone(e.target.value)}
+            style={{ padding: "0.5rem", borderRadius: "6px", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", flex: "1 1 150px" }}
+          />
+          <button 
+            className="btn-primary" 
+            onClick={handleSendAlert} 
+            disabled={sendingAlert || (!alertEmail && !alertPhone)}
+          >
+            {sendingAlert ? "Đang gửi..." : "Gửi báo cáo"}
+          </button>
+        </div>
+        {alertStatus && (
+          <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: alertStatus.type === "error" ? "var(--error)" : "var(--energy)" }}>
+            {alertStatus.msg}
+          </div>
+        )}
+      </div>
 
       {/* Storytelling section */}
       <ExplainSection
@@ -168,8 +316,8 @@ export default function ResultsPanel({
 
       {/* QAOA hyperparameter analysis (III.3 — evidence of quantum tuning) */}
       <div style={{ marginTop: "1.5rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
-        <button onClick={onAnalyze} disabled={analyzing}>
-          {analyzing ? "⏳ Đang chạy QAOA nhiều cấu hình..." : "🔬 Phân tích thuật toán lượng tử"}
+        <button className="btn-primary" onClick={onAnalyze} disabled={analyzing}>
+          {analyzing ? "Đang chạy QAOA nhiều cấu hình..." : "Phân tích thuật toán lượng tử"}
         </button>
         {analysis && (
           <div style={{ marginTop: "0.75rem" }}>
