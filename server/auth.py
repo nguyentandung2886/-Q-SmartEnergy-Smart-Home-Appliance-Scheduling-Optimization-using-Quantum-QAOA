@@ -16,8 +16,12 @@ from database import get_db
 from models import User
 
 JWT_SECRET = os.environ.get("JWT_SECRET")
-if not JWT_SECRET:
-    raise RuntimeError("JWT_SECRET environment variable is required. Set it in server/.env")
+if not JWT_SECRET or JWT_SECRET.startswith("replace") or len(JWT_SECRET) < 32:
+    raise RuntimeError(
+        "JWT_SECRET must be a strong random value (>= 32 chars), not the placeholder. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\" "
+        "and set it in server/.env"
+    )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24
 

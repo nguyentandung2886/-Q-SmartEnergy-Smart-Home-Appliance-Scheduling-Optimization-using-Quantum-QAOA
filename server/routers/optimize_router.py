@@ -8,11 +8,13 @@ import base64
 import io
 import json
 from dataclasses import replace
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
+import matplotlib
+matplotlib.use("Agg")  # headless, thread-safe backend for rendering charts in request handlers
 import matplotlib.pyplot as plt
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 import calc
@@ -29,8 +31,8 @@ router = APIRouter(tags=["optimize"])
 
 
 class OptimizeRequest(BaseModel):
-    day_of_month: int = 9
-    weather_condition: str = "sunny"
+    day_of_month: int = Field(9, ge=1, le=30)
+    weather_condition: Literal["sunny", "cloudy", "rainy"] = "sunny"
     use_quantum: bool = True
     pinned_schedule: Optional[Dict[str, int]] = None
     # ML-forecasted run durations (giờ) per appliance name, from /forecast. Override the
@@ -284,8 +286,8 @@ def optimize(
 
 
 class RecomputeBillRequest(BaseModel):
-    day_of_month: int = 9
-    weather_condition: str = "sunny"
+    day_of_month: int = Field(9, ge=1, le=30)
+    weather_condition: Literal["sunny", "cloudy", "rainy"] = "sunny"
     schedule: Dict[str, int] = {}          # flexible appliance name -> chosen hour
     fixed_hours: Dict[str, List[int]] = {}  # fixed appliance name -> list of ON hours
 

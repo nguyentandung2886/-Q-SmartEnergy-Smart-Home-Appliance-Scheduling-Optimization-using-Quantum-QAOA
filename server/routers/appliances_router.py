@@ -2,7 +2,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -13,10 +13,10 @@ router = APIRouter(prefix="/appliances", tags=["appliances"])
 
 
 class ApplianceIn(BaseModel):
-    name: str
-    power_w: float
-    duration_hours: float
-    quantity: int = 1
+    name: str = Field(min_length=1, max_length=100)
+    power_w: float = Field(gt=0)
+    duration_hours: float = Field(gt=0, le=24)
+    quantity: int = Field(1, ge=1)
     candidate_hours: List[int] = []
     is_flexible: bool = True
 
