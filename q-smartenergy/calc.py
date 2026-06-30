@@ -113,19 +113,24 @@ def calculate_bill(kwh: float, tiers: list = None) -> float:
     return total_bill * (1 + VAT_RATE)
 
 
-def grid_purchase_kwh(self_consumption_rate: float) -> float:
+def grid_purchase_kwh(self_consumption_rate: float, monthly_kwh: float = None) -> float:
     """
     Calculate grid-purchased kWh after solar self-consumption.
 
     Args:
         self_consumption_rate: Fraction of solar output self-consumed directly (0.0 to 1.0).
-                              Remainder is exported to grid.
+        monthly_kwh: Override total household monthly load. Defaults to module-level MONTHLY_KWH
+                     (the appliance_catalog total) if None — this preserves existing behavior for
+                     every current caller. Pass a specific value to compute a per-user bill
+                     (server/routers/optimize_router.py), where each user has their own appliance
+                     list and thus a different monthly total.
 
     Returns:
-        kWh purchased from grid = MONTHLY_KWH - (SOLAR_MONTHLY_GENERATION_KWH * self_consumption_rate)
+        kWh purchased from grid = monthly_kwh_effective - SOLAR_MONTHLY_GENERATION_KWH * self_consumption_rate
     """
+    monthly_kwh_effective = MONTHLY_KWH if monthly_kwh is None else monthly_kwh
     solar_self_consumed = SOLAR_MONTHLY_GENERATION_KWH * self_consumption_rate
-    return MONTHLY_KWH - solar_self_consumed
+    return monthly_kwh_effective - solar_self_consumed
 
 
 # BILL_BEFORE_VND / BILL_AFTER_VND / SAVINGS_PERCENT are DIRECT formula results — no longer

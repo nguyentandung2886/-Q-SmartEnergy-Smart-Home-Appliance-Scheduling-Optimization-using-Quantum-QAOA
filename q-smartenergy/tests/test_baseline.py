@@ -99,6 +99,18 @@ class TestGridPurchaseKwh:
         after = grid_purchase_kwh(SELF_CONSUMPTION_AFTER)
         assert after < before
 
+    def test_grid_purchase_kwh_default_unchanged(self):
+        """Calling with no monthly_kwh must produce the same result as before this change."""
+        from calc import MONTHLY_KWH, SOLAR_MONTHLY_GENERATION_KWH, grid_purchase_kwh
+        assert grid_purchase_kwh(0.30) == pytest.approx(MONTHLY_KWH - SOLAR_MONTHLY_GENERATION_KWH * 0.30)
+
+    def test_grid_purchase_kwh_with_custom_monthly_kwh(self):
+        """Passing monthly_kwh overrides the module-level MONTHLY_KWH — used for per-user billing."""
+        from calc import grid_purchase_kwh, SOLAR_MONTHLY_GENERATION_KWH
+        custom_kwh = 1000.0
+        result = grid_purchase_kwh(0.30, monthly_kwh=custom_kwh)
+        assert result == pytest.approx(custom_kwh - SOLAR_MONTHLY_GENERATION_KWH * 0.30)
+
 
 class TestBillBeforeAfterDerivation:
     """BILL_BEFORE_VND/BILL_AFTER_VND/SAVINGS_PERCENT are now direct formula results,
