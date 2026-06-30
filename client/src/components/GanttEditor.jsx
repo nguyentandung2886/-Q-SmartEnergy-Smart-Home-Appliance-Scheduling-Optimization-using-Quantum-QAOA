@@ -2,17 +2,25 @@ import { useEffect, useState } from "react";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-export default function GanttEditor({ schedule, fixedWindows = {}, appliances, onPinnedChange, disabled }) {
-  // localSchedule holds ONLY flexible appliances' single start hour (the draggable blocks).
+export default function GanttEditor({
+  schedule,
+  fixedWindows = {},
+  appliances,
+  onPinnedChange,
+  onFixedWindowsChange,
+  disabled,
+}) {
+  // Flexible appliances: single start hour (drag re-optimizes). Fixed appliances: list of usage
+  // windows the user can drag to their real habits (drag does NOT re-optimize, only updates display
+  // + the power-safety check). Both kept in local state for optimistic updates.
   const [localSchedule, setLocalSchedule] = useState({ ...schedule });
-  const [draggingName, setDraggingName] = useState(null);
-  const [dragOverInfo, setDragOverInfo] = useState(null); // { rowName, hour }
+  const [localFixed, setLocalFixed] = useState(fixedWindows);
+  const [dragging, setDragging] = useState(null); // { name, index }
+  const [dragOverInfo, setDragOverInfo] = useState(null); // { name, hour }
   const [pointerOff, setPointerOff] = useState(false);
 
-  // Sync local schedule when QAOA returns a new result
-  useEffect(() => {
-    setLocalSchedule({ ...schedule });
-  }, [schedule]);
+  useEffect(() => { setLocalSchedule({ ...schedule }); }, [schedule]);
+  useEffect(() => { setLocalFixed(fixedWindows); }, [fixedWindows]);
 
   function getApp(name) {
     return appliances.find((a) => a.name === name);
@@ -22,29 +30,38 @@ export default function GanttEditor({ schedule, fixedWindows = {}, appliances, o
     return getApp(name)?.candidate_hours ?? [];
   }
 
-  function isValidHour(name, hour) {
-    const cands = candidateHours(name);
-    return cands.length === 0 || cands.includes(hour);
+  function blockLength(name, index) {
+    const app = getApp(name);
+    if (app?.is_flexible) return Math.max(1, Math.ceil(app.duration_hours));
+    return (localFixed[name]?.[index]?.[1]) ?? 1;
   }
 
-  function handleDragStart(e, name) {
-    setDraggingName(name);
+  // A drop at `hour` is valid if: flexible → hour is a candidate; fixed → the block fits in 0–23.
+  function canDropAt(name, index, hour) {
+    const app = getApp(name);
+    if (app?.is_flexible) {
+      const cands = candidateHours(name);
+      return cands.length === 0 || cands.includes(hour);
+    }
+    return hour + blockLength(name, index) <= 24;
+  }
+
+  function handleDragStart(e, name, index) {
+    setDragging({ name, index });
     e.dataTransfer.setData("text/plain", name);
     e.dataTransfer.effectAllowed = "move";
-    // Delay pointer-events removal by one frame so the browser
-    // captures the drag ghost image before cells take over events.
     requestAnimationFrame(() => setPointerOff(true));
   }
 
   function handleDragOver(e, rowName, hour) {
-    if (!draggingName || rowName !== draggingName) return;
-    if (!isValidHour(draggingName, hour)) return;
+    if (!dragging || rowName !== dragging.name) return;
+    if (!canDropAt(dragging.name, dragging.index, hour)) return;
     e.preventDefault();
-    setDragOverInfo({ rowName, hour });
+    setDragOverInfo({ name: rowName, hour });
   }
 
   function handleDragLeave(rowName, hour) {
-    if (dragOverInfo?.rowName === rowName && dragOverInfo?.hour === hour) {
+    if (dragOverInfo?.name === rowName && dragOverInfo?.hour === hour) {
       setDragOverInfo(null);
     }
   }
@@ -53,33 +70,42 @@ export default function GanttEditor({ schedule, fixedWindows = {}, appliances, o
     e.preventDefault();
     setDragOverInfo(null);
     setPointerOff(false);
-    if (!draggingName || rowName !== draggingName) return;
-    if (!isValidHour(draggingName, hour)) return;
+    if (!dragging || rowName !== dragging.name) return;
+    const { name, index } = dragging;
+    setDragging(null);
+    if (!canDropAt(name, index, hour)) return;
 
-    const newSchedule = { ...localSchedule, [draggingName]: hour };
-    setLocalSchedule(newSchedule); // optimistic update
-    setDraggingName(null);
-
-    // Report only flexible appliances as pinned
-    const pinned = Object.fromEntries(
-      Object.entries(newSchedule).filter(([n]) => getApp(n)?.is_flexible)
-    );
-    onPinnedChange(pinned);
+    const app = getApp(name);
+    if (app?.is_flexible) {
+      const newSchedule = { ...localSchedule, [name]: hour };
+      setLocalSchedule(newSchedule);
+      const pinned = Object.fromEntries(
+        Object.entries(newSchedule).filter(([n]) => getApp(n)?.is_flexible)
+      );
+      onPinnedChange(pinned); // re-optimize for flexible loads
+    } else {
+      const windows = (localFixed[name] ?? []).map((w, i) =>
+        i === index ? [hour, w[1]] : w
+      );
+      const newFixed = { ...localFixed, [name]: windows };
+      setLocalFixed(newFixed);
+      onFixedWindowsChange?.(newFixed); // update display + power-safety only (no re-optimize)
+    }
   }
 
   function handleDragEnd() {
-    setDraggingName(null);
+    setDragging(null);
     setPointerOff(false);
     setDragOverInfo(null);
   }
 
-  // One row per appliance. Flexible appliances get a single draggable block at their optimized
-  // hour; fixed appliances get one block per realistic usage window (may be several per day).
+  // One row per appliance. Flexible → a single draggable block; fixed → one draggable block per
+  // usage window (the user can place each at the hours they actually use the appliance).
   const rows = appliances.map((app) => {
     const flexible = app.is_flexible;
     const blocks = flexible
-      ? [{ start: localSchedule[app.name] ?? 0, len: Math.max(1, Math.ceil(app.duration_hours)) }]
-      : (fixedWindows[app.name] ?? []).map(([start, len]) => ({ start, len }));
+      ? [{ start: localSchedule[app.name] ?? 0, len: Math.max(1, Math.ceil(app.duration_hours)), index: 0 }]
+      : (localFixed[app.name] ?? []).map(([start, len], index) => ({ start, len, index }));
     return { name: app.name, app, flexible, blocks };
   });
 
@@ -103,20 +129,21 @@ export default function GanttEditor({ schedule, fixedWindows = {}, appliances, o
       {/* Appliance rows */}
       {rows.map(({ name, app, flexible, blocks }) => {
         const cands = candidateHours(name);
-        const isBeingDragged = draggingName === name;
+        const draggableRow = !disabled;
 
         return (
           <div key={name} className="gantt-row">
             <div className="gantt-label" title={name}>
               {name.length > 16 ? name.slice(0, 15) + "…" : name}
-              {flexible && <span className="gantt-flex-badge">⟳</span>}
+              {flexible
+                ? <span className="gantt-flex-badge" title="Tự động tối ưu">⟳</span>
+                : <span className="gantt-flex-badge" title="Kéo để đặt giờ dùng" style={{ color: "var(--text-muted)" }}>⠿</span>}
             </div>
             <div className="gantt-track">
               {/* Drop-zone / grid cells (z-index 1) */}
               {HOURS.map((h) => {
-                const isCandidate = cands.length === 0 || cands.includes(h);
-                const isHover =
-                  dragOverInfo?.rowName === name && dragOverInfo?.hour === h;
+                const isCandidate = flexible ? (cands.length === 0 || cands.includes(h)) : true;
+                const isHover = dragOverInfo?.name === name && dragOverInfo?.hour === h;
                 return (
                   <div
                     key={h}
@@ -128,41 +155,44 @@ export default function GanttEditor({ schedule, fixedWindows = {}, appliances, o
                       .filter(Boolean)
                       .join(" ")}
                     style={{ gridColumn: h + 1 }}
-                    onDragOver={
-                      flexible && !disabled ? (e) => handleDragOver(e, name, h) : undefined
+                    onDragOver={draggableRow ? (e) => handleDragOver(e, name, h) : undefined}
+                    onDragLeave={draggableRow ? () => handleDragLeave(name, h) : undefined}
+                    onDrop={draggableRow ? (e) => handleDrop(e, name, h) : undefined}
+                  />
+                );
+              })}
+              {/* Blocks (z-index 2) — each independently draggable */}
+              {blocks.map((block) => {
+                const isBeingDragged =
+                  dragging?.name === name && dragging?.index === block.index;
+                return (
+                  <div
+                    key={block.index}
+                    className={[
+                      "gantt-block",
+                      flexible ? "gantt-block-flex" : "gantt-block-fixed",
+                      isBeingDragged ? "gantt-block-dragging" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    style={{
+                      gridColumn: `${block.start + 1} / span ${block.len}`,
+                      pointerEvents: isBeingDragged && pointerOff ? "none" : "auto",
+                      cursor: draggableRow ? "grab" : "default",
+                    }}
+                    draggable={draggableRow}
+                    onDragStart={
+                      draggableRow ? (e) => handleDragStart(e, name, block.index) : undefined
                     }
-                    onDragLeave={
-                      flexible && !disabled ? () => handleDragLeave(name, h) : undefined
-                    }
-                    onDrop={
-                      flexible && !disabled ? (e) => handleDrop(e, name, h) : undefined
+                    onDragEnd={handleDragEnd}
+                    title={
+                      flexible
+                        ? `${name}: ${block.start}h – ${block.start + block.len}h (kéo để tối ưu lại)`
+                        : `${name}: ${block.start}h – ${block.start + block.len}h (kéo để đặt giờ dùng)`
                     }
                   />
                 );
               })}
-              {/* Blocks (z-index 2). Flexible: one draggable block. Fixed: one per usage window. */}
-              {blocks.map((block, i) => (
-                <div
-                  key={i}
-                  className={[
-                    "gantt-block",
-                    flexible ? "gantt-block-flex" : "gantt-block-fixed",
-                    flexible && isBeingDragged ? "gantt-block-dragging" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  style={{
-                    gridColumn: `${block.start + 1} / span ${block.len}`,
-                    pointerEvents: flexible && isBeingDragged && pointerOff ? "none" : "auto",
-                  }}
-                  draggable={flexible && !disabled}
-                  onDragStart={
-                    flexible && !disabled ? (e) => handleDragStart(e, name) : undefined
-                  }
-                  onDragEnd={flexible ? handleDragEnd : undefined}
-                  title={`${name}: ${block.start}h – ${block.start + block.len}h`}
-                />
-              ))}
             </div>
           </div>
         );

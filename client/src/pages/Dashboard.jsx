@@ -172,11 +172,17 @@ export default function Dashboard() {
   const [forecasting, setForecasting] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [fixedWindows, setFixedWindows] = useState({}); // user-editable fixed-appliance usage windows
   const debounceRef = useRef(null);
   const { logout } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => { loadAppliances(); }, []);
+
+  // Reset editable fixed-appliance windows whenever a new optimization result arrives.
+  useEffect(() => {
+    if (result) setFixedWindows(result.fixed_windows ?? {});
+  }, [result]);
 
   async function loadAppliances() {
     try {
@@ -519,9 +525,10 @@ export default function Dashboard() {
                 shown at their realistic usage windows (possibly several per day) */}
             <GanttEditor
               schedule={result.schedule}
-              fixedWindows={result.fixed_windows ?? {}}
+              fixedWindows={fixedWindows}
               appliances={appliances}
               onPinnedChange={handlePinnedChange}
+              onFixedWindowsChange={setFixedWindows}
               disabled={reoptimizing}
             />
 
@@ -529,7 +536,7 @@ export default function Dashboard() {
             {(() => {
               const peak = computePeakPower(
                 result.schedule,
-                result.fixed_windows ?? {},
+                fixedWindows,
                 appliances
               );
               const overload = peak.peakW > SAFE_POWER_W;
