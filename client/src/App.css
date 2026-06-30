@@ -236,3 +236,29 @@ td button { background: none; border: none; cursor: pointer; color: var(--error)
 .gantt-block-dragging {
   opacity: 0.35;
 }
+
+/* ── Explain card ────────────────────────────────────── */
+.explain-card {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--indigo);
+  background: #eef2ff;
+  border-radius: 0 8px 8px 0;
+  line-height: 1.75;
+  font-size: 0.9rem;
+  color: #1e1b4b;
+}
+.btn-explain {
+  background: var(--gold);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1.25rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.btn-explain:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   createAppliance, deleteAppliance, getAppliances,
-  optimize as apiOptimize, updateAppliance,
+  optimize as apiOptimize, updateAppliance, explainSchedule,
 } from "../api";
 import { useAuth } from "../AuthContext";
 import { useCountUp } from "../useCountUp";
+import GanttEditor from "../components/GanttEditor";
 
 const WEATHER_OPTIONS = [
   { value: "sunny", label: "☀️ Nắng" },
@@ -28,18 +29,12 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
     <tr>
       <td>{appliance.name}</td>
       <td>
-        <input
-          type="number" value={power} min={1}
-          onChange={(e) => setPower(e.target.value)}
-          onBlur={save}
-        />
+        <input type="number" value={power} min={1}
+          onChange={(e) => setPower(e.target.value)} onBlur={save} />
       </td>
       <td>
-        <input
-          type="number" value={duration} min={0.1} step={0.1}
-          onChange={(e) => setDuration(e.target.value)}
-          onBlur={save}
-        />
+        <input type="number" value={duration} min={0.1} step={0.1}
+          onChange={(e) => setDuration(e.target.value)} onBlur={save} />
       </td>
       <td style={{ color: appliance.is_flexible ? "var(--teal)" : "var(--text-muted)" }}>
         {appliance.is_flexible ? "Linh hoạt" : "Cố định"}
@@ -81,10 +76,15 @@ export default function Dashboard() {
   const [weather, setWeather] = useState("sunny");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [reoptimizing, setReoptimizing] = useState(false);
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("");
   const [newPower, setNewPower] = useState(100);
   const [newDuration, setNewDuration] = useState(1);
+  const [pinnedSchedule, setPinnedSchedule] = useState({});
+  const [explainText, setExplainText] = useState("");
+  const [explainLoading, setExplainLoading] = useState(false);
+  const debounceRef = useRef(null);
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -119,21 +119,82 @@ export default function Dashboard() {
     await loadAppliances();
   }
 
-  async function handleOptimize() {
-    setLoading(true); setError(""); setResult(null);
+  async function runOptimize(pinned = {}) {
+    const isDrag = Object.keys(pinned).length > 0;
+    setError("");
+    if (isDrag) {
+      setReoptimizing(true);
+    } else {
+      setLoading(true);
+      setResult(null);
+      setPinnedSchedule({});
+      setExplainText("");
+    }
     try {
-      const data = await apiOptimize({ day_of_month: Number(dayOfMonth), weather_condition: weather, use_quantum: true });
+      const data = await apiOptimize({
+        day_of_month: Number(dayOfMonth),
+        weather_condition: weather,
+        use_quantum: true,
+        ...(isDrag ? { pinned_schedule: pinned } : {}),
+      });
       setResult(data);
     } catch {
       setError("Lỗi khi tối ưu hóa. Kiểm tra backend đã chạy chưa?");
     } finally {
       setLoading(false);
+      setReoptimizing(false);
+    }
+  }
+
+  function handlePinnedChange(newPinned) {
+    setPinnedSchedule(newPinned);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runOptimize(newPinned), 400);
+  }
+
+  async function handleExplain() {
+    setExplainText("");
+    setExplainLoading(true);
+    try {
+      const response = await explainSchedule({
+        schedule: result.schedule,
+        appliances: appliances.map((a) => ({
+          name: a.name,
+          power_w: a.power_w,
+          duration_hours: a.duration_hours,
+          is_flexible: a.is_flexible,
+        })),
+        bill_before_vnd: result.bill_before_vnd,
+        bill_after_vnd: result.bill_after_vnd,
+        savings_percent: result.savings_percent,
+        weather_condition: result.weather_condition,
+        solver_used: result.solver_used,
+      });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        for (const line of text.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const content = line.slice(6);
+          if (content === "[DONE]") { setExplainLoading(false); return; }
+          if (content) setExplainText((prev) => prev + content);
+        }
+      }
+    } catch {
+      setExplainText("Không thể kết nối Gemini. Vui lòng thử lại.");
+    } finally {
+      setExplainLoading(false);
     }
   }
 
   function handleLogout() { logout(); navigate("/login"); }
 
-  const totalKwh = appliances.reduce((sum, a) => sum + a.power_w / 1000 * a.duration_hours * 30, 0);
+  const totalKwh = appliances.reduce(
+    (sum, a) => sum + (a.power_w / 1000) * a.duration_hours * 30, 0
+  );
 
   return (
     <motion.div
@@ -156,7 +217,10 @@ export default function Dashboard() {
         <h2>Thiết bị của bạn — tổng ~{totalKwh.toFixed(0)} kWh/tháng</h2>
         <table>
           <thead>
-            <tr><th>Tên thiết bị</th><th>Công suất (W)</th><th>Giờ dùng</th><th>Loại</th><th></th></tr>
+            <tr>
+              <th>Tên thiết bị</th><th>Công suất (W)</th>
+              <th>Giờ dùng</th><th>Loại</th><th></th>
+            </tr>
           </thead>
           <tbody>
             {appliances.map((a) => (
@@ -165,9 +229,12 @@ export default function Dashboard() {
           </tbody>
         </table>
         <form onSubmit={handleAdd} className="add-form">
-          <input placeholder="Tên thiết bị mới" value={newName} onChange={(e) => setNewName(e.target.value)} required />
-          <input type="number" placeholder="Công suất (W)" value={newPower} min={1} onChange={(e) => setNewPower(e.target.value)} required />
-          <input type="number" placeholder="Giờ/ngày" value={newDuration} min={0.1} step={0.1} onChange={(e) => setNewDuration(e.target.value)} required />
+          <input placeholder="Tên thiết bị mới" value={newName}
+            onChange={(e) => setNewName(e.target.value)} required />
+          <input type="number" placeholder="Công suất (W)" value={newPower} min={1}
+            onChange={(e) => setNewPower(e.target.value)} required />
+          <input type="number" placeholder="Giờ/ngày" value={newDuration} min={0.1} step={0.1}
+            onChange={(e) => setNewDuration(e.target.value)} required />
           <button type="submit">+ Thêm thiết bị</button>
         </form>
       </div>
@@ -178,17 +245,20 @@ export default function Dashboard() {
         <div className="optimize-controls">
           <label>
             Ngày trong tháng
-            <input type="number" min={1} max={30} value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
+            <input type="number" min={1} max={30} value={dayOfMonth}
+              onChange={(e) => setDayOfMonth(e.target.value)} />
           </label>
           <label>
             Thời tiết hôm nay
             <select value={weather} onChange={(e) => setWeather(e.target.value)}>
-              {WEATHER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {WEATHER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
           </label>
           <motion.button
             className="btn-optimize"
-            onClick={handleOptimize}
+            onClick={() => runOptimize()}
             disabled={loading}
             whileHover={{ scale: loading ? 1 : 1.03 }}
             whileTap={{ scale: loading ? 1 : 0.97 }}
@@ -226,14 +296,78 @@ export default function Dashboard() {
               savingsPct={result.savings_percent}
             />
             <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
-              Solver: {result.solver_used}{result.used_fallback ? " (dùng fallback cổ điển)" : ""}
+              Solver: {result.solver_used}
+              {result.used_fallback ? " (dùng fallback cổ điển)" : ""}
             </p>
-            {result.gantt_chart_png && (
-              <img src={`data:image/png;base64,${result.gantt_chart_png}`} alt="Lịch chạy thiết bị tối ưu" />
+
+            {/* Re-optimize pulse */}
+            {reoptimizing && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0.4, 1, 0.4] }}
+                transition={{ repeat: Infinity, duration: 1.2 }}
+                style={{
+                  color: "var(--indigo)", fontWeight: 600,
+                  marginBottom: "0.5rem", fontSize: "0.85rem",
+                }}
+              >
+                ⚡ Đang tính lại lịch...
+              </motion.div>
             )}
+
+            {/* Interactive Gantt — replaces static gantt_chart_png */}
+            <GanttEditor
+              schedule={result.schedule}
+              appliances={appliances}
+              onPinnedChange={handlePinnedChange}
+              disabled={reoptimizing}
+            />
+
+            {/* Bill comparison chart (static PNG, unchanged) */}
             {result.bill_chart_png && (
-              <img src={`data:image/png;base64,${result.bill_chart_png}`} alt="So sánh hóa đơn điện" style={{ marginTop: "1rem" }} />
+              <img
+                src={`data:image/png;base64,${result.bill_chart_png}`}
+                alt="So sánh hóa đơn điện"
+                style={{ marginTop: "1rem" }}
+              />
             )}
+
+            {/* Storytelling section */}
+            <div style={{ marginTop: "1rem" }}>
+              <motion.button
+                className="btn-explain"
+                onClick={handleExplain}
+                disabled={explainLoading}
+                whileHover={{ scale: explainLoading ? 1 : 1.03 }}
+                whileTap={{ scale: explainLoading ? 1 : 0.97 }}
+              >
+                ✨ Giải thích kết quả
+              </motion.button>
+
+              {explainLoading && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ repeat: Infinity, duration: 1.2 }}
+                  style={{
+                    marginTop: "0.75rem",
+                    color: "var(--indigo)",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  ⟳ Gemini đang phân tích...
+                </motion.div>
+              )}
+
+              {explainText && (
+                <div className="explain-card">
+                  <strong>💡 Phân tích kết quả</strong>
+                  <p style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
+                    {explainText}
+                  </p>
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

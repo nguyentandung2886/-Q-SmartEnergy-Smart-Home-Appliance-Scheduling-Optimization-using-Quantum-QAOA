@@ -55,4 +55,16 @@ export async function getSchedules() {
   return data;
 }
 
+// Returns raw fetch Response (not axios) — needed for SSE ReadableStream
+export function explainSchedule(payload) {
+  return fetch(`${API_BASE_URL}/explain`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export default apiClient;
