@@ -93,6 +93,23 @@ npm install
 npm run dev        # http://localhost:5173, proxying API to http://localhost:8000
 ```
 
+## Database Migrations (Alembic)
+
+The schema is versioned with Alembic (`server/alembic/`). For local dev and the
+Docker demo the app calls `create_all` on startup, so the database just works
+out of the box. For a managed deployment, run migrations as a deploy step:
+
+```bash
+cd server
+alembic upgrade head                       # apply migrations to DATABASE_URL
+alembic revision --autogenerate -m "msg"   # after changing server/models.py
+```
+
+Alembic reads `DATABASE_URL` from the environment (same source as the app) and
+targets `models.py`'s metadata, so generated migrations stay in sync with the
+models. To adopt an existing `create_all` database, run `alembic stamp head`
+once before generating new revisions.
+
 ## Tests
 
 ```bash
