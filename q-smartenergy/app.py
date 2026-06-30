@@ -28,6 +28,8 @@ Rubric Mapping:
   - Vòng Phụ Mức Khó (+25đ): weather_condition là lớp classical feed vào QUBO/QAOA
 """
 
+import matplotlib.pyplot as plt
+
 import calc
 import data_prep
 import qubo_builder
@@ -135,8 +137,14 @@ if st.button("Tối ưu hóa"):
             day_of_month=day_of_month,
             weather_condition=weather_condition,
         )
-        st.pyplot(visualizer.plot_schedule_gantt(result.schedule, edited_appliances))
-        st.pyplot(visualizer.plot_cost_comparison())
+        # Render then close each figure so pyplot's global registry doesn't
+        # accumulate Figures across Streamlit reruns (memory leak).
+        gantt_fig = visualizer.plot_schedule_gantt(result.schedule, edited_appliances)
+        st.pyplot(gantt_fig)
+        plt.close(gantt_fig)
+        bill_fig = visualizer.plot_cost_comparison()
+        st.pyplot(bill_fig)
+        plt.close(bill_fig)
         st.success(f"Lịch chạy tối ưu (solver: {result.solver_used}, fallback: {result.used_fallback})")
 
         st.subheader("Kết quả demo (lịch chạy thật từ QAOA/fallback)")

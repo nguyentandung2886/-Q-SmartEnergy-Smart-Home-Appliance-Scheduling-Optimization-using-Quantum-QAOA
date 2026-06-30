@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import { AuthProvider, useAuth } from "./AuthContext";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
@@ -29,9 +30,11 @@ function AnimatedRoutes() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AnimatedRoutes />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AnimatedRoutes />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
