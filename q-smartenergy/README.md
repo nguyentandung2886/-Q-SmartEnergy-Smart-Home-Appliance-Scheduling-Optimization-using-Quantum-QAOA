@@ -50,7 +50,7 @@ q-smartenergy/
 | `qubo_builder.py` | Encodes the appliance scheduling problem as a QUBO (Quadratic Unconstrained Binary Optimization) matrix. |
 | `quantum_runner.py` | Executes QAOA on Qiskit Aer Simulator to find optimal schedules, with a mandatory classical brute-force fallback and a hyperparameter-comparison utility. |
 | `visualizer.py` | Generates the schedule Gantt chart and the bill comparison bar chart. |
-| `app.py` | Streamlit dashboard — lets users edit appliance power/duration, pick a day of month, and pick a weather condition, then view the optimized schedule. |
+| `app.py` | Streamlit **debug/admin tool** — exercises the optimization pipeline directly (edit appliance power/duration, pick a day of month and weather, view the optimized schedule) without auth or a database. The official end-user UI is the React client (`client/`) backed by the FastAPI server; this app is for developing and demoing the quantum engine in isolation. |
 
 ## Setup & Usage
 

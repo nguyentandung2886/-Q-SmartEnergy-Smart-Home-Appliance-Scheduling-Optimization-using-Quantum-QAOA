@@ -53,7 +53,14 @@ summary from Gemini via Server-Sent Events.
 |------|------------|
 | [`q-smartenergy/`](q-smartenergy/) | Quantum + classical optimization pipeline (QUBO, QAOA, EVN pricing, ML duration forecaster). See [its README](q-smartenergy/README.md). |
 | [`server/`](server/) | FastAPI backend: JWT auth, appliance CRUD, `/optimize`, `/recompute-bill`, `/forecast`, `/explain` (SSE). SQLAlchemy + SQLite. |
-| [`client/`](client/) | React + Vite dashboard: appliance editor, drag-and-drop Gantt scheduler, bill comparison, Gemini explanation. |
+| [`client/`](client/) | React + Vite dashboard: appliance editor, drag-and-drop Gantt scheduler, bill comparison, Gemini explanation. **This is the official user interface.** |
+
+> **Two UIs, one product.** The **React client** (`client/`) is the official
+> end-user interface, backed by the FastAPI server. The Streamlit app
+> (`q-smartenergy/app.py`) is kept as a lightweight **debug/admin tool** for
+> exercising the optimization pipeline directly (no auth, no database) — handy
+> for development and demos of the quantum engine in isolation, not the product
+> UI.
 
 ## Quick Start (Docker)
 
