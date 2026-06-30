@@ -141,3 +141,98 @@ td button { background: none; border: none; cursor: pointer; color: var(--error)
 
 /* History */
 .history-page { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+
+/* ── GanttEditor ─────────────────────────────────────── */
+.gantt-editor {
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  overflow-x: auto;
+}
+.gantt-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.gantt-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #f3f4f6;
+  min-height: 36px;
+}
+.gantt-row:last-child {
+  border-bottom: none;
+}
+.gantt-header-row {
+  border-bottom: 2px solid var(--border);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  background: #f9fafb;
+}
+.gantt-label {
+  width: 148px;
+  min-width: 148px;
+  padding: 0 0.5rem;
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.gantt-flex-badge {
+  color: var(--teal);
+  font-size: 0.7rem;
+}
+.gantt-track {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  position: relative;
+  align-items: stretch;
+}
+.gantt-header-cell {
+  text-align: center;
+  padding: 6px 0 4px;
+  grid-row: 1;
+  border-right: 1px solid #f3f4f6;
+  font-size: 0.65rem;
+}
+.gantt-cell {
+  grid-row: 1;
+  border-right: 1px solid #f3f4f6;
+  transition: background 0.1s;
+  z-index: 1;
+}
+.gantt-cell-valid {
+  background: rgba(15, 118, 110, 0.06);
+}
+.gantt-cell-hover {
+  background: rgba(15, 118, 110, 0.2) !important;
+  outline: 2px dashed var(--teal);
+  outline-offset: -2px;
+}
+.gantt-block {
+  grid-row: 1;
+  border-radius: 5px;
+  margin: 4px 1px;
+  z-index: 2;
+  cursor: grab;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.gantt-block-flex {
+  background: var(--indigo);
+  opacity: 0.85;
+}
+.gantt-block-flex:hover {
+  opacity: 1;
+  box-shadow: 0 2px 8px rgba(55, 48, 163, 0.35);
+}
+.gantt-block-fixed {
+  background: #d1d5db;
+  cursor: default;
+}
+.gantt-block-dragging {
+  opacity: 0.35;
+}
