@@ -18,6 +18,7 @@ q-smartenergy/
 ├── appliance_catalog.py      # Sourced 10-type household appliance catalog (feeds calc.MONTHLY_KWH)
 ├── data_prep.py              # EVN tier price profile + solar generation profile (weather-aware)
 ├── weather_model.py          # Classical weather-forecast layer (Hybrid Quantum-Classical bonus)
+├── forecaster.py             # Classical ML duration forecaster (numpy least-squares; feeds QAOA)
 ├── qubo_builder.py           # QUBO formulation for quantum optimization
 ├── quantum_runner.py         # QAOA execution on Qiskit Aer Simulator + classical fallback
 ├── visualizer.py              # Gantt chart & bill comparison chart
@@ -45,6 +46,7 @@ q-smartenergy/
 | `appliance_catalog.py` | Sourced 10-type household appliance catalog (power ratings, daily usage hours) — feeds `calc.py`'s `MONTHLY_KWH`. |
 | `data_prep.py` | Prepares the EVN marginal-tier-price profile and the (weather-aware) solar generation profile for a representative day. |
 | `weather_model.py` | Classical forecasting layer: converts a simulated weather condition into a solar-output multiplier — the "classical" half of the Hybrid Quantum-Classical architecture. |
+| `forecaster.py` | Classical ML layer (Vòng Phụ +15đ): a hand-rolled least-squares linear regression (numpy only, no external ML libs) predicts a flexible appliance's run duration from job features, then feeds `duration_hours` into QAOA via `optimize_router.py`. Exposed through the FastAPI server, not the Streamlit `app.py`. |
 | `qubo_builder.py` | Encodes the appliance scheduling problem as a QUBO (Quadratic Unconstrained Binary Optimization) matrix. |
 | `quantum_runner.py` | Executes QAOA on Qiskit Aer Simulator to find optimal schedules, with a mandatory classical brute-force fallback and a hyperparameter-comparison utility. |
 | `visualizer.py` | Generates the schedule Gantt chart and the bill comparison bar chart. |
