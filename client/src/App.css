@@ -275,3 +275,28 @@ td button { background: none; border: none; cursor: pointer; color: var(--error)
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ── Responsive: tablet ──────────────────────────────── */
+@media (max-width: 768px) {
+  .dashboard, .history-page { padding: 1.25rem 1rem; }
+  .dashboard-header h1 { font-size: 1.5rem; }
+}
+
+/* ── Responsive: phone ───────────────────────────────── */
+@media (max-width: 640px) {
+  .dashboard, .history-page { padding: 1rem 0.75rem; }
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .dashboard-header h1 { font-size: 1.35rem; }
+  .optimize-controls { gap: 0.75rem; }
+  .optimize-controls label { min-width: 100px; }
+  .bill-numbers { gap: 1rem; }
+
+  /* Keep the Gantt usable: shrink the label and let the 24-hour track
+     scroll horizontally (cells stay wide enough to tap). */
+  .gantt-label { width: 96px; min-width: 96px; font-size: 0.7rem; }
+  .gantt-track { min-width: 540px; }
+}
