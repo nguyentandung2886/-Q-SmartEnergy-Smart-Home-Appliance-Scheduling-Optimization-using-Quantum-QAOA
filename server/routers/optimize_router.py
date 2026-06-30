@@ -9,6 +9,7 @@ import io
 import json
 from typing import List, Optional
 
+import matplotlib.pyplot as plt
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -32,7 +33,7 @@ class OptimizeRequest(BaseModel):
     use_quantum: bool = True
 
 
-class ScheduleOut(BaseModel):
+class _ScheduleBase(BaseModel):
     id: int
     created_at: str
     day_of_month: int
@@ -45,8 +46,15 @@ class ScheduleOut(BaseModel):
     bill_before_vnd: float
     bill_after_vnd: float
     savings_percent: float
-    gantt_chart_png: Optional[str] = None
-    bill_chart_png: Optional[str] = None
+
+
+class ScheduleOut(_ScheduleBase):
+    gantt_chart_png: str
+    bill_chart_png: str
+
+
+class ScheduleHistoryOut(_ScheduleBase):
+    pass
 
 
 def _fig_to_base64(fig) -> str:
@@ -94,6 +102,8 @@ def optimize(
     bill_fig = visualizer.plot_cost_comparison(bill_before, bill_after)
     gantt_png = _fig_to_base64(gantt_fig)
     bill_png = _fig_to_base64(bill_fig)
+    plt.close(gantt_fig)
+    plt.close(bill_fig)
 
     row = ScheduleModel(
         user_id=current_user.id,
@@ -121,7 +131,7 @@ def optimize(
     )
 
 
-@router.get("/schedules", response_model=List[ScheduleOut])
+@router.get("/schedules", response_model=List[ScheduleHistoryOut])
 def list_schedules(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = (
         db.query(ScheduleModel)
@@ -130,7 +140,7 @@ def list_schedules(current_user: User = Depends(get_current_user), db: Session =
         .all()
     )
     return [
-        ScheduleOut(
+        ScheduleHistoryOut(
             id=r.id, created_at=r.created_at.isoformat(),
             day_of_month=r.day_of_month, weather_condition=r.weather_condition,
             solver_used=r.solver_used, used_fallback=r.used_fallback, energy=r.energy,
