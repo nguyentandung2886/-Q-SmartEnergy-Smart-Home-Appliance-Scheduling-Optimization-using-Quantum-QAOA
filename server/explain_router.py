@@ -9,13 +9,12 @@ from pydantic import BaseModel
 from auth import get_current_user
 from models import User
 
+# GEMINI_API_KEY stays optional at startup: a missing key must NOT crash the whole app (the
+# rest of the demo — auth, optimize, forecast — has nothing to do with Gemini). When absent,
+# /explain degrades gracefully with a friendly message instead of taking the server down.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError(
-        "GEMINI_API_KEY environment variable is required. Set it in server/.env"
-    )
-
-genai.configure(api_key=GEMINI_API_KEY)
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 router = APIRouter(tags=["explain"])
 
@@ -58,6 +57,11 @@ def _build_prompt(req: ExplainRequest) -> str:
 
 
 def _stream_explanation(prompt: str):
+    if not GEMINI_API_KEY:
+        yield ("data: ❌ Tính năng giải thích chưa khả dụng: chưa cấu hình GEMINI_API_KEY "
+               "trong server/.env. Các tính năng khác vẫn hoạt động bình thường.\n\n")
+        yield "data: [DONE]\n\n"
+        return
     try:
         model = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt, stream=True)

@@ -9,10 +9,15 @@ def _make_chunk(text: str):
     return chunk
 
 
-def test_explain_streams_sse(client, auth_headers):
+def test_explain_streams_sse(client, auth_headers, monkeypatch):
     """POST /explain with mocked Gemini returns text/event-stream with data: lines."""
     headers = auth_headers("explainuser1")
     mock_chunks = [_make_chunk("Hệ thống đã"), _make_chunk(" tối ưu tốt.")]
+
+    # Ensure the key guard passes so the (mocked) Gemini path runs even if the test env
+    # has no real key configured.
+    import explain_router
+    monkeypatch.setattr(explain_router, "GEMINI_API_KEY", "fake-key-for-test")
 
     with patch("explain_router.genai.GenerativeModel") as mock_cls:
         mock_model = MagicMock()
@@ -64,15 +69,20 @@ def test_explain_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_explain_missing_gemini_key_raises_at_startup(monkeypatch):
-    """If GEMINI_API_KEY is not set, importing explain_router raises RuntimeError."""
-    import pytest
-
+def test_explain_missing_gemini_key_degrades_gracefully(monkeypatch):
+    """Without GEMINI_API_KEY the app must still import and /explain must stream a friendly
+    message + [DONE] (never crash the whole server over an optional feature)."""
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     sys.modules.pop("explain_router", None)
-    with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
-        import explain_router  # noqa: F401
-    # Restore module so later tests in this session are unaffected
+    import explain_router  # noqa: F811 — must import cleanly with no key
+
+    assert explain_router.GEMINI_API_KEY in (None, "")
+    body = "".join(explain_router._stream_explanation("bất kỳ prompt nào"))
+    assert "data:" in body
+    assert "GEMINI_API_KEY" in body
+    assert "data: [DONE]" in body
+
+    # Restore module with a key so later tests in this session are unaffected.
     monkeypatch.setenv("GEMINI_API_KEY", "restored-fake-key")
     sys.modules.pop("explain_router", None)
     import explain_router  # noqa: F401, F811
