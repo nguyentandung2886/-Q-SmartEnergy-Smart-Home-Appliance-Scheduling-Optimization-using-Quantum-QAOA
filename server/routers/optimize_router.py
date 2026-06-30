@@ -7,6 +7,7 @@ Per-user bill: calculated from the user's OWN appliance list total, not the glob
 import base64
 import io
 import json
+import unicodedata
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
@@ -65,12 +66,64 @@ def _fig_to_base64(fig) -> str:
     return base64.b64encode(buf.read()).decode("ascii")
 
 
+def _normalize_name(name: str) -> str:
+    """Normalize a string for comparison, handling encoding issues.
+    Removes combining characters (accents) and normalizes to NFC form.
+    This helps match appliance names even if they were corrupted during storage/retrieval."""
+    # NFD decomposition separates base characters from combining marks
+    nfd = unicodedata.normalize('NFD', name)
+    # Remove combining marks (accents, diacritics)
+    normalized = ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
+    return normalized
+
+
+def _levenshtein_distance(s1: str, s2: str) -> int:
+    """Calculate Levenshtein distance between two strings for fuzzy matching."""
+    if len(s1) < len(s2):
+        return _levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
+    from appliance_catalog import HOUSEHOLD_APPLIANCES
+
     result = []
     for row in rows:
         hours = tuple(int(h) for h in row.candidate_hours.split(",") if h) if row.candidate_hours else ()
+        # Try to find the correct catalog name by fuzzy matching or normalization
+        corrected_name = row.name
+
+        # First try exact normalized match
+        normalized_db_name = _normalize_name(row.name)
+        for cat_app in HOUSEHOLD_APPLIANCES:
+            if _normalize_name(cat_app.name) == normalized_db_name:
+                corrected_name = cat_app.name
+                break
+        else:
+            # If no exact normalized match, try fuzzy matching based on Levenshtein distance
+            min_distance = float('inf')
+            for cat_app in HOUSEHOLD_APPLIANCES:
+                distance = _levenshtein_distance(_normalize_name(row.name), _normalize_name(cat_app.name))
+                if distance < min_distance:
+                    min_distance = distance
+                    corrected_name = cat_app.name
+                if distance == 0:  # Perfect normalized match found
+                    break
+
         result.append(Appliance(
-            name=row.name, power_w=row.power_w, duration_hours=row.duration_hours,
+            name=corrected_name, power_w=row.power_w, duration_hours=row.duration_hours,
             candidate_hours=hours, is_flexible=row.is_flexible,
         ))
     return result
@@ -86,44 +139,24 @@ def optimize(
     user_appliances = _db_rows_to_appliances(rows)
 
     # --- pinned_schedule: validate hours then override flexibility for this run only ---
-    from appliance_catalog import HOUSEHOLD_APPLIANCES
     pinned = payload.pinned_schedule or {}
     if pinned:
-        # Build a reference map of appliances from the catalog for validation
-        catalog_by_name = {app.name: app for app in HOUSEHOLD_APPLIANCES}
-
-        # Try to match each pinned name to an appliance in the user's list
-        pinned_to_apply = {}  # Maps from actual app.name (from DB) to the pinned hour
+        # Build map from normalized names to appliances for robust matching (handles encoding issues)
+        user_app_by_normalized = {_normalize_name(a.name): a for a in user_appliances}
+        pinned_to_apply = {}
         for pinned_name, hour in pinned.items():
-            # First check if this is a known appliance in the catalog
-            if pinned_name not in catalog_by_name:
+            normalized_pinned = _normalize_name(pinned_name)
+            app = user_app_by_normalized.get(normalized_pinned)
+            if app is None:
+                continue  # silently ignore appliances not in user's list
+            if app.candidate_hours and hour not in app.candidate_hours:
                 raise HTTPException(
                     status_code=422,
-                    detail=f"'{pinned_name}': unknown appliance",
+                    detail=f"'{pinned_name}': hour {hour} not in candidate_hours {list(app.candidate_hours)}",
                 )
-
-            # Get the candidate hours from the catalog
-            catalog_app = catalog_by_name[pinned_name]
-            if catalog_app.candidate_hours and hour not in catalog_app.candidate_hours:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"'{pinned_name}': hour {hour} not in "
-                        f"candidate_hours {list(catalog_app.candidate_hours)}"
-                    ),
-                )
-
-            # Find the corresponding appliance in the user's list (by name match from catalog)
-            matched_app = None
-            for app in user_appliances:
-                if app.name == pinned_name:
-                    matched_app = app
-                    break
-
-            if matched_app:
-                pinned_to_apply[matched_app.name] = hour
-
-        # Replace appliances that are pinned with non-flexible versions
+            # Store using the appliance's actual name (from DB), not the pinned_name
+            pinned_to_apply[app.name] = hour
+        # Override pinned appliances to fixed for this run only
         user_appliances = [
             Appliance(
                 name=a.name,
@@ -136,6 +169,8 @@ def optimize(
             else a
             for a in user_appliances
         ]
+    else:
+        pinned_to_apply = {}
 
     flexible, _fixed = split_by_flexibility(user_appliances)
 
@@ -144,7 +179,7 @@ def optimize(
     result = scheduler.solve(use_quantum=payload.use_quantum)
 
     # Merge pinned entries back — QAOA only ran on remaining flexible appliances
-    for name, hour in pinned.items():
+    for name, hour in pinned_to_apply.items():
         result.schedule[name] = hour
 
     # Per-user bill: uses user's OWN appliance list total, not global calc.MONTHLY_KWH.

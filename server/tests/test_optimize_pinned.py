@@ -41,6 +41,7 @@ def test_pinned_invalid_hour_returns_422(client, auth_headers):
         json={
             "day_of_month": 9,
             "weather_condition": "sunny",
+            "use_quantum": False,
             "pinned_schedule": {"Máy giặt": 3},
         },
         headers=headers,
