@@ -15,15 +15,17 @@ from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 load_dotenv()
 
-TEST_DATABASE_URL = os.environ.get(
-    "DATABASE_URL_TEST",
-    "mssql+pyodbc://localhost/q_smartenergy_test?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes",
+# Tests are hermetic: a shared in-memory SQLite DB, no external server needed.
+# StaticPool keeps a single connection so every session sees the same :memory: DB.
+_test_engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
-
-_test_engine = create_engine(TEST_DATABASE_URL)
 _TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_test_engine)
 
 

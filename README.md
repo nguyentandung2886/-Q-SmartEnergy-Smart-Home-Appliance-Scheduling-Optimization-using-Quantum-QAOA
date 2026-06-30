@@ -27,7 +27,7 @@ flowchart LR
         CALC[calc - EVN tiers]
         FCAST[forecaster - ML]
     end
-    DB[(SQL Server)]
+    DB[(SQLite)]
     GEM[(Gemini API)]
 
     UI -->|/api| Server
@@ -52,7 +52,7 @@ summary from Gemini via Server-Sent Events.
 | Path | What it is |
 |------|------------|
 | [`q-smartenergy/`](q-smartenergy/) | Quantum + classical optimization pipeline (QUBO, QAOA, EVN pricing, ML duration forecaster). See [its README](q-smartenergy/README.md). |
-| [`server/`](server/) | FastAPI backend: JWT auth, appliance CRUD, `/optimize`, `/recompute-bill`, `/forecast`, `/explain` (SSE). SQLAlchemy + SQL Server. |
+| [`server/`](server/) | FastAPI backend: JWT auth, appliance CRUD, `/optimize`, `/recompute-bill`, `/forecast`, `/explain` (SSE). SQLAlchemy + SQLite. |
 | [`client/`](client/) | React + Vite dashboard: appliance editor, drag-and-drop Gantt scheduler, bill comparison, Gemini explanation. |
 
 ## Quick Start (Docker)
@@ -60,26 +60,29 @@ summary from Gemini via Server-Sent Events.
 Requires Docker + Docker Compose.
 
 ```bash
-cp .env.example .env        # then edit .env: set a strong SA_PASSWORD,
-                            # a matching DATABASE_URL, a 32+ char JWT_SECRET,
-                            # and your GEMINI_API_KEY
+cp .env.example .env        # then edit .env: set a 32+ char JWT_SECRET and
+                            # (optionally) your GEMINI_API_KEY. The SQLite
+                            # DATABASE_URL default already works as-is.
 docker compose up --build
 ```
 
 - Frontend: http://localhost:3000
 - API: http://localhost:8000 (also reachable same-origin at `/api` via the frontend)
 
-Docker Compose reads the single `.env` automatically — both for `${...}`
-substitution in `docker-compose.yml` and as the `api` container's environment.
-`.env` is gitignored; never commit real secrets.
+The database is SQLite, stored on the `api_data` Docker volume — no separate
+database container, no password, nothing to wait for on startup. Docker Compose
+reads the single `.env` automatically, both for `${...}` substitution in
+`docker-compose.yml` and as the `api` container's environment. `.env` is
+gitignored; never commit real secrets.
 
 ## Local Development
 
-**Backend** (from `server/`, needs a reachable SQL Server + ODBC Driver 18):
+**Backend** (from `server/` — SQLite needs no external database):
 
 ```bash
 pip install -r requirements.txt -r ../q-smartenergy/requirements.txt
-# server/.env holds DATABASE_URL, JWT_SECRET (32+ chars), GEMINI_API_KEY
+# server/.env holds JWT_SECRET (32+ chars) and GEMINI_API_KEY; DATABASE_URL
+# defaults to a local SQLite file (sqlite:///./q_smartenergy.db).
 uvicorn main:app --reload --port 8000
 ```
 

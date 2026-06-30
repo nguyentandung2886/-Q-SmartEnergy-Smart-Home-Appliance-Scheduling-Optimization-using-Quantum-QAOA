@@ -15,37 +15,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "q-smartenergy"
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from sqlalchemy import text
-
 from database import Base, engine
 
+# SQLite stores TEXT as Unicode natively, so create_all builds the complete
+# current schema for a fresh DB — no per-column ALTER TABLE migrations needed.
 Base.metadata.create_all(bind=engine)
-
-# Idempotent migration: add savings_percent column if not present (existing installs).
-with engine.begin() as _conn:
-    try:
-        _conn.execute(text("ALTER TABLE schedules ADD savings_percent FLOAT NULL"))
-    except Exception:
-        pass  # Column already exists
-
-# Idempotent migration: add quantity column if not present.
-with engine.begin() as _conn:
-    try:
-        _conn.execute(text("ALTER TABLE appliances ADD quantity INT NOT NULL DEFAULT 1"))
-    except Exception:
-        pass  # Column already exists
-
-# Idempotent migration: convert VARCHAR → NVARCHAR for Unicode (Vietnamese text).
-# appliances.name and schedules.schedule_json are the critical columns.
-with engine.begin() as _conn:
-    for _stmt in [
-        "ALTER TABLE appliances ALTER COLUMN name NVARCHAR(100) NOT NULL",
-        "ALTER TABLE schedules ALTER COLUMN schedule_json NVARCHAR(MAX) NOT NULL",
-    ]:
-        try:
-            _conn.execute(text(_stmt))
-        except Exception:
-            pass  # Already NVARCHAR, or not applicable
 
 app = FastAPI(title="Q-SmartEnergy API", version="1.0.0")
 

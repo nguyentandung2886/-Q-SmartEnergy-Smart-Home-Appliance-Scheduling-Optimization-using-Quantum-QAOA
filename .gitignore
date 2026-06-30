@@ -10,3 +10,8 @@ client/.env
 
 # Generated artifact from data_prep.py __main__
 q-smartenergy/daily_profile.csv
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3

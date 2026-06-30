@@ -1,34 +1,17 @@
 services:
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    environment:
-      ACCEPT_EULA: "Y"
-      SA_PASSWORD: "${SA_PASSWORD}"
-      MSSQL_PID: "Express"
-    ports:
-      - "1433:1433"
-    volumes:
-      - sqlserver_data:/var/opt/mssql
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null -N -C || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     env_file: .env
-    environment:
-      SQLSERVER_HOST: sqlserver
-      SA_PASSWORD: "${SA_PASSWORD}"
+    # SQLite lives on a named volume so data survives container restarts.
+    # DATABASE_URL in .env should point at sqlite:////app/data/q_smartenergy.db
+    volumes:
+      - api_data:/app/data
     ports:
       - "8000:8000"
-    depends_on:
-      sqlserver:
-        condition: service_healthy
+    networks:
+      - app-net
 
   frontend:
     build:
@@ -40,6 +23,11 @@ services:
       - "3000:80"
     depends_on:
       - api
+    networks:
+      - app-net
 
 volumes:
-  sqlserver_data:
+  api_data:
+
+networks:
+  app-net:
