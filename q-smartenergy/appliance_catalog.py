@@ -22,7 +22,8 @@ Rubric Mapping:
   # Rubric III.2 - ánh xạ đúng ràng buộc đời thực (tải cố định vs linh hoạt)
 """
 
-from typing import List, Tuple
+import math
+from typing import Dict, List, Tuple
 
 from qubo_builder import Appliance
 
@@ -99,3 +100,31 @@ def split_by_flexibility(appliances: List[Appliance]) -> Tuple[List[Appliance], 
     flexible = [a for a in appliances if a.is_flexible]
     fixed = [a for a in appliances if not a.is_flexible]
     return flexible, fixed
+
+
+# Giờ bắt đầu sử dụng ĐIỂN HÌNH cho thiết bị cố định — chỉ để VẼ một ngày sinh hoạt thực tế
+# trên Gantt. Thiết bị cố định KHÔNG phải biến quyết định của QUBO (không thể dời giờ nấu ăn,
+# xem tivi...). Đây là nếp dùng điện điển hình của hộ gia đình VN, không phải kết quả tối ưu hóa.
+DEFAULT_USAGE_START_HOUR: Dict[str, int] = {
+    "Tủ lạnh": 0,                                # chạy 24/7
+    "Điều hòa phòng ngủ (12000 BTU)": 18,        # tối đến đêm
+    "Điều hòa phòng khách (18000 BTU)": 12,      # trưa - chiều
+    "Quạt điện": 12,                             # trưa nóng
+    "Bếp điện": 18,                              # nấu bữa tối
+    "Bóng điện": 18,                             # chiếu sáng buổi tối
+    "Nồi cơm điện": 17,                          # nấu cơm chiều
+    "Tivi": 19,                                  # khung giờ vàng
+    "Lò vi sóng": 12,                            # hâm đồ ăn trưa
+}
+
+_DEFAULT_START_FALLBACK = 18  # thiết bị cố định lạ → mặc định buổi tối
+
+
+def usage_start_hour(appliance: Appliance) -> int:
+    """Giờ bắt đầu hiển thị (0-23) của 1 thiết bị cố định trên lịch ngày. Đảm bảo block
+    (start + số giờ chạy) không vượt quá 24h để Gantt không tràn lưới 24 cột."""
+    start = DEFAULT_USAGE_START_HOUR.get(appliance.name, _DEFAULT_START_FALLBACK)
+    span = min(24, max(1, math.ceil(appliance.duration_hours)))
+    if start + span > 24:
+        start = max(0, 24 - span)
+    return start

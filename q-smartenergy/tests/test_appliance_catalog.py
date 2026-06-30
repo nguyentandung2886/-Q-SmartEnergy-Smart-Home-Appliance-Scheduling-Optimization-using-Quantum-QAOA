@@ -5,7 +5,14 @@ power ratings, used to derive calc.MONTHLY_KWH (replaces the old locked literal)
 
 import pytest
 
-from appliance_catalog import HOUSEHOLD_APPLIANCES, split_by_flexibility, total_monthly_kwh
+import math
+
+from appliance_catalog import (
+    HOUSEHOLD_APPLIANCES,
+    split_by_flexibility,
+    total_monthly_kwh,
+    usage_start_hour,
+)
 
 
 def test_household_appliances_has_ten_distinct_types():
@@ -57,3 +64,24 @@ def test_refrigerator_present_and_always_on():
     fridge = next(a for a in HOUSEHOLD_APPLIANCES if a.name == "Tủ lạnh")
     assert fridge.is_flexible is False
     assert fridge.duration_hours == 24
+
+
+def test_usage_start_hour_block_never_overflows_24h():
+    """Mọi thiết bị: start + số giờ chạy phải <= 24 để Gantt 24 cột không bị tràn."""
+    for a in HOUSEHOLD_APPLIANCES:
+        start = usage_start_hour(a)
+        span = min(24, max(1, math.ceil(a.duration_hours)))
+        assert 0 <= start <= 23
+        assert start + span <= 24, f"{a.name}: block {start}+{span} vượt 24h"
+
+
+def test_usage_start_hour_fridge_at_zero():
+    fridge = next(a for a in HOUSEHOLD_APPLIANCES if a.name == "Tủ lạnh")
+    assert usage_start_hour(fridge) == 0
+
+
+def test_usage_start_hour_unknown_appliance_uses_evening_fallback():
+    from qubo_builder import Appliance
+    unknown = Appliance(name="Thiết bị lạ", power_w=100, duration_hours=2,
+                        candidate_hours=(), is_flexible=False)
+    assert usage_start_hour(unknown) == 18

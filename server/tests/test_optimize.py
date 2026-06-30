@@ -22,6 +22,24 @@ def test_optimize_returns_valid_schedule_and_charts(client, auth_headers):
     assert data["bill_chart_png"] is not None
 
 
+def test_optimize_display_schedule_covers_all_appliances_at_real_hours(client, auth_headers):
+    headers = auth_headers("dispuser")
+    appliances = client.get("/appliances", headers=headers).json()
+    data = client.post(
+        "/optimize",
+        json={"day_of_month": 9, "weather_condition": "sunny", "use_quantum": False},
+        headers=headers,
+    ).json()
+    disp = data["display_schedule"]
+    # Every appliance (fixed + flexible) appears in the display schedule.
+    for a in appliances:
+        assert a["name"] in disp
+        assert 0 <= disp[a["name"]] <= 23
+    # Fixed appliances are no longer all piled at hour 0: e.g. Tivi at a realistic evening hour.
+    assert disp["Tivi"] != 0
+    assert disp["Tủ lạnh"] == 0  # fridge runs from hour 0 (24/7)
+
+
 def test_optimize_saves_to_schedules_history(client, auth_headers):
     headers = auth_headers("histuser")
     client.post("/optimize", json={"day_of_month": 9, "weather_condition": "sunny"}, headers=headers)

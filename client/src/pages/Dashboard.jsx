@@ -20,27 +20,20 @@ const PROGRAM_LABELS = { quick: "Nhanh", normal: "Thường", heavy: "Mạnh" };
 // Ngưỡng công suất đồng thời an toàn của hộ gia đình (khớp power_threshold_w trong QUBO H_power).
 const SAFE_POWER_W = 5000;
 
-// Tính công suất đồng thời (W) từng giờ từ lịch tối ưu: thiết bị linh hoạt ở giờ được xếp +
-// thiết bị nền chạy 24/7 (vd tủ lạnh) ở mọi giờ. Trả { peakW, peakHour, names } của giờ đỉnh.
+// Tính công suất đồng thời (W) từng giờ từ lịch hiển thị (mọi thiết bị ở giờ chạy thật: tải
+// linh hoạt ở giờ được tối ưu, tải cố định ở giờ sinh hoạt). Trả { peakW, peakHour, names }.
 function computePeakPower(schedule, appliances) {
   const watts = Array(24).fill(0);
   const atHour = Array.from({ length: 24 }, () => []);
   for (const a of appliances) {
+    const h = schedule[a.name];
+    if (h == null) continue;
     const eff = a.power_w * (a.quantity ?? 1);
-    if (a.is_flexible) {
-      const h = schedule[a.name];
-      if (h == null) continue;
-      const dur = Math.max(1, Math.ceil(a.duration_hours));
-      for (let k = 0; k < dur; k++) {
-        const hh = (h + k) % 24;
-        watts[hh] += eff;
-        atHour[hh].push(a.name);
-      }
-    } else if (a.duration_hours >= 24) {
-      for (let h = 0; h < 24; h++) {
-        watts[h] += eff;
-        atHour[h].push(a.name);
-      }
+    const dur = a.duration_hours >= 24 ? 24 : Math.max(1, Math.ceil(a.duration_hours));
+    for (let k = 0; k < dur; k++) {
+      const hh = (h + k) % 24;
+      watts[hh] += eff;
+      atHour[hh].push(a.name);
     }
   }
   let peakHour = 0;
@@ -515,12 +508,14 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* Interactive Gantt — all appliances: fixed at hour 0, flexible at QAOA hour */}
+            {/* Interactive Gantt — flexible appliances at QAOA hour, fixed at realistic usage hours */}
             <GanttEditor
-              schedule={{
-                ...appliances.reduce((acc, a) => ({ ...acc, [a.name]: 0 }), {}),
-                ...result.schedule,
-              }}
+              schedule={
+                result.display_schedule ?? {
+                  ...appliances.reduce((acc, a) => ({ ...acc, [a.name]: 0 }), {}),
+                  ...result.schedule,
+                }
+              }
               appliances={appliances}
               onPinnedChange={handlePinnedChange}
               disabled={reoptimizing}
@@ -528,7 +523,10 @@ export default function Dashboard() {
 
             {/* Power-overload safety check (+8đ Mức Dễ): cảnh báo công suất đồng thời */}
             {(() => {
-              const peak = computePeakPower(result.schedule, appliances);
+              const peak = computePeakPower(
+                result.display_schedule ?? result.schedule,
+                appliances
+              );
               const overload = peak.peakW > SAFE_POWER_W;
               return (
                 <div
