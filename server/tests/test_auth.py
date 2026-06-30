@@ -7,8 +7,8 @@ def test_register_creates_user_and_seeds_12_appliances(client):
     token = response.json()["access_token"]
 
     appliances_response = client.get("/appliances", headers={"Authorization": f"Bearer {token}"})
-    # /appliances endpoint doesn't exist yet — just check the register response is valid JWT
-    assert len(token) > 10
+    assert appliances_response.status_code == 200
+    assert len(appliances_response.json()) == 12
 
 
 def test_register_duplicate_username_returns_400(client):

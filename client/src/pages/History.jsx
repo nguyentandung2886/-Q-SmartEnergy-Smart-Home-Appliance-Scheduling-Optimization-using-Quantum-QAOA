@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getSchedules } from "../api";
@@ -16,7 +17,13 @@ export default function History() {
   const WEATHER_LABELS = { sunny: "☀️ Nắng", cloudy: "⛅ Có mây", rainy: "🌧 Mưa" };
 
   return (
-    <div className="history-page">
+    <motion.div
+      className="history-page"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.25 }}
+    >
       <header className="dashboard-header">
         <h1>Lịch sử tối ưu hóa</h1>
         <button onClick={() => navigate("/dashboard")}>← Quay lại</button>
@@ -69,6 +76,6 @@ export default function History() {
           </p>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
