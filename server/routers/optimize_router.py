@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 import calc
 import data_prep
 import visualizer
-from appliance_catalog import split_by_flexibility, total_monthly_kwh, usage_start_hour
+from appliance_catalog import split_by_flexibility, total_monthly_kwh, usage_windows
 from auth import get_current_user
 from database import get_db
 from models import ApplianceModel, ScheduleModel, User
@@ -56,9 +56,10 @@ class _ScheduleBase(BaseModel):
 class ScheduleOut(_ScheduleBase):
     gantt_chart_png: str
     bill_chart_png: str
-    # Full day schedule for the Gantt: flexible appliances at their QAOA hour + fixed
-    # appliances at realistic usage hours (so the chart shows a complete, real day).
-    display_schedule: Dict[str, int]
+    # Fixed appliances' realistic daily usage windows for the Gantt: {name: [[start, length], ...]}.
+    # Each appliance may run in SEVERAL disjoint windows (e.g. fan at noon + evening), not one block.
+    # Flexible appliances aren't here — they live in `schedule` at their single optimized hour.
+    fixed_windows: Dict[str, List[List[int]]]
 
 
 class ScheduleHistoryOut(_ScheduleBase):
@@ -185,13 +186,14 @@ def optimize(
     bill_after = max(0.0, bill_before - monthly_solar_savings)
     savings_percent = (bill_before - bill_after) / bill_before * 100 if bill_before > 0 else 0.0
 
-    # Full-day Gantt schedule: flexible appliances at their optimized hour, fixed appliances at
-    # realistic usage hours (instead of all piling at hour 0). Fixed loads aren't QUBO variables,
-    # so these are typical-usage hours for display, not an optimization result.
-    display_schedule = dict(result.schedule)
-    for app in user_appliances:
-        if app.name not in display_schedule:
-            display_schedule[app.name] = usage_start_hour(app)
+    # Fixed appliances' realistic usage windows for the Gantt (flexible ones are already in
+    # result.schedule at their optimized hour). Each fixed appliance can run in several disjoint
+    # windows across the day — typical-usage hours for display, not an optimization result.
+    fixed_windows = {
+        app.name: [[start, length] for start, length in usage_windows(app)]
+        for app in user_appliances
+        if app.name not in result.schedule
+    }
 
     gantt_fig = visualizer.plot_schedule_gantt(result.schedule, user_appliances)
     bill_fig = visualizer.plot_cost_comparison(bill_before, bill_after)
@@ -224,7 +226,7 @@ def optimize(
         schedule=result.schedule, monthly_kwh=user_monthly_kwh,
         bill_before_vnd=bill_before, bill_after_vnd=bill_after,
         savings_percent=savings_percent, gantt_chart_png=gantt_png, bill_chart_png=bill_png,
-        display_schedule=display_schedule,
+        fixed_windows=fixed_windows,
     )
 
 

@@ -22,7 +22,7 @@ def test_optimize_returns_valid_schedule_and_charts(client, auth_headers):
     assert data["bill_chart_png"] is not None
 
 
-def test_optimize_display_schedule_covers_all_appliances_at_real_hours(client, auth_headers):
+def test_optimize_fixed_windows_cover_fixed_appliances_with_real_windows(client, auth_headers):
     headers = auth_headers("dispuser")
     appliances = client.get("/appliances", headers=headers).json()
     data = client.post(
@@ -30,14 +30,20 @@ def test_optimize_display_schedule_covers_all_appliances_at_real_hours(client, a
         json={"day_of_month": 9, "weather_condition": "sunny", "use_quantum": False},
         headers=headers,
     ).json()
-    disp = data["display_schedule"]
-    # Every appliance (fixed + flexible) appears in the display schedule.
+    fw = data["fixed_windows"]
+    flexible_names = {a["name"] for a in appliances if a["is_flexible"]}
+    # Every FIXED appliance has at least one usage window; flexible ones are not here.
     for a in appliances:
-        assert a["name"] in disp
-        assert 0 <= disp[a["name"]] <= 23
-    # Fixed appliances are no longer all piled at hour 0: e.g. Tivi at a realistic evening hour.
-    assert disp["Tivi"] != 0
-    assert disp["Tủ lạnh"] == 0  # fridge runs from hour 0 (24/7)
+        if a["is_flexible"]:
+            assert a["name"] not in fw
+        else:
+            assert a["name"] in fw
+            assert len(fw[a["name"]]) >= 1
+            for start, length in fw[a["name"]]:
+                assert 0 <= start <= 23 and length >= 1 and start + length <= 24
+    # Fan runs in multiple disjoint windows (not one continuous block).
+    assert len(fw["Quạt điện"]) >= 2
+    assert fw["Tủ lạnh"] == [[0, 24]]  # fridge runs all day
 
 
 def test_optimize_saves_to_schedules_history(client, auth_headers):

@@ -20,25 +20,32 @@ const PROGRAM_LABELS = { quick: "Nhanh", normal: "Thường", heavy: "Mạnh" };
 // Ngưỡng công suất đồng thời an toàn của hộ gia đình (khớp power_threshold_w trong QUBO H_power).
 const SAFE_POWER_W = 5000;
 
-// Tính công suất đồng thời (W) từng giờ từ lịch hiển thị (mọi thiết bị ở giờ chạy thật: tải
-// linh hoạt ở giờ được tối ưu, tải cố định ở giờ sinh hoạt). Trả { peakW, peakHour, names }.
-function computePeakPower(schedule, appliances) {
+// Tính công suất đồng thời (W) từng giờ từ giờ chạy thật của mọi thiết bị: tải linh hoạt ở
+// giờ được tối ưu (1 khối), tải cố định ở các khung giờ sinh hoạt (có thể nhiều khung). Trả
+// { peakW, peakHour, names } của giờ đỉnh.
+function computePeakPower(flexibleSchedule, fixedWindows, appliances) {
   const watts = Array(24).fill(0);
   const atHour = Array.from({ length: 24 }, () => []);
-  for (const a of appliances) {
-    const h = schedule[a.name];
-    if (h == null) continue;
-    const eff = a.power_w * (a.quantity ?? 1);
-    const dur = a.duration_hours >= 24 ? 24 : Math.max(1, Math.ceil(a.duration_hours));
-    for (let k = 0; k < dur; k++) {
-      const hh = (h + k) % 24;
+  const addBlock = (name, eff, start, len) => {
+    for (let k = 0; k < len; k++) {
+      const hh = (start + k) % 24;
       watts[hh] += eff;
-      atHour[hh].push(a.name);
+      atHour[hh].push(name);
+    }
+  };
+  for (const a of appliances) {
+    const eff = a.power_w * (a.quantity ?? 1);
+    if (a.is_flexible) {
+      const h = flexibleSchedule[a.name];
+      if (h == null) continue;
+      addBlock(a.name, eff, h, Math.max(1, Math.ceil(a.duration_hours)));
+    } else {
+      for (const [start, len] of fixedWindows[a.name] ?? []) addBlock(a.name, eff, start, len);
     }
   }
   let peakHour = 0;
   for (let h = 1; h < 24; h++) if (watts[h] > watts[peakHour]) peakHour = h;
-  return { peakW: watts[peakHour], peakHour, names: atHour[peakHour] };
+  return { peakW: watts[peakHour], peakHour, names: [...new Set(atHour[peakHour])] };
 }
 
 // Đặc trưng công việc cho lớp ML dự báo thời lượng (khớp forecaster.FORECAST_SCHEMA backend).
@@ -508,14 +515,11 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* Interactive Gantt — flexible appliances at QAOA hour, fixed at realistic usage hours */}
+            {/* Interactive Gantt — flexible appliances draggable at QAOA hour, fixed appliances
+                shown at their realistic usage windows (possibly several per day) */}
             <GanttEditor
-              schedule={
-                result.display_schedule ?? {
-                  ...appliances.reduce((acc, a) => ({ ...acc, [a.name]: 0 }), {}),
-                  ...result.schedule,
-                }
-              }
+              schedule={result.schedule}
+              fixedWindows={result.fixed_windows ?? {}}
               appliances={appliances}
               onPinnedChange={handlePinnedChange}
               disabled={reoptimizing}
@@ -524,7 +528,8 @@ export default function Dashboard() {
             {/* Power-overload safety check (+8đ Mức Dễ): cảnh báo công suất đồng thời */}
             {(() => {
               const peak = computePeakPower(
-                result.display_schedule ?? result.schedule,
+                result.schedule,
+                result.fixed_windows ?? {},
                 appliances
               );
               const overload = peak.peakW > SAFE_POWER_W;

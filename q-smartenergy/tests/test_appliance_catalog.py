@@ -5,13 +5,11 @@ power ratings, used to derive calc.MONTHLY_KWH (replaces the old locked literal)
 
 import pytest
 
-import math
-
 from appliance_catalog import (
     HOUSEHOLD_APPLIANCES,
     split_by_flexibility,
     total_monthly_kwh,
-    usage_start_hour,
+    usage_windows,
 )
 
 
@@ -66,22 +64,31 @@ def test_refrigerator_present_and_always_on():
     assert fridge.duration_hours == 24
 
 
-def test_usage_start_hour_block_never_overflows_24h():
-    """Mọi thiết bị: start + số giờ chạy phải <= 24 để Gantt 24 cột không bị tràn."""
+def test_usage_windows_never_overflow_24h():
+    """Mọi khung giờ của mọi thiết bị: start trong 0-23 và start+length <= 24 (Gantt 24 cột)."""
     for a in HOUSEHOLD_APPLIANCES:
-        start = usage_start_hour(a)
-        span = min(24, max(1, math.ceil(a.duration_hours)))
-        assert 0 <= start <= 23
-        assert start + span <= 24, f"{a.name}: block {start}+{span} vượt 24h"
+        for start, length in usage_windows(a):
+            assert 0 <= start <= 23
+            assert length >= 1
+            assert start + length <= 24, f"{a.name}: khung {start}+{length} vượt 24h"
 
 
-def test_usage_start_hour_fridge_at_zero():
+def test_usage_windows_fridge_runs_all_day():
     fridge = next(a for a in HOUSEHOLD_APPLIANCES if a.name == "Tủ lạnh")
-    assert usage_start_hour(fridge) == 0
+    assert usage_windows(fridge) == [(0, 24)]
 
 
-def test_usage_start_hour_unknown_appliance_uses_evening_fallback():
+def test_usage_windows_supports_multiple_disjoint_windows():
+    """Quạt điện minh họa: chạy NHIỀU khung giờ rời nhau (trưa + tối), không phải 1 khối."""
+    fan = next(a for a in HOUSEHOLD_APPLIANCES if a.name == "Quạt điện")
+    windows = usage_windows(fan)
+    assert len(windows) >= 2  # nhiều khung
+
+
+def test_usage_windows_unknown_appliance_uses_evening_fallback():
     from qubo_builder import Appliance
     unknown = Appliance(name="Thiết bị lạ", power_w=100, duration_hours=2,
                         candidate_hours=(), is_flexible=False)
-    assert usage_start_hour(unknown) == 18
+    windows = usage_windows(unknown)
+    assert len(windows) == 1
+    assert windows[0] == (18, 2)
