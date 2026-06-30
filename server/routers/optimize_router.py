@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 import calc
 import data_prep
-from data_prep import generate_solar_profile
 import visualizer
 from appliance_catalog import split_by_flexibility, total_monthly_kwh
 from auth import get_current_user
@@ -66,35 +65,30 @@ def _fig_to_base64(fig) -> str:
     return base64.b64encode(buf.read()).decode("ascii")
 
 
-def _schedule_self_consumption_rate(schedule: dict, appliances: List, solar_profile) -> float:
-    """Interpolate the solar self-consumption rate from the actual schedule.
+def _daily_solar_savings_vnd(schedule: dict, appliances: List, daily_profile) -> float:
+    """Daily VND saved by scheduling flexible appliances into solar hours.
 
-    calc.py models self-consumption as a whole-house rate that rises from
-    SELF_CONSUMPTION_BEFORE (baseline) toward SELF_CONSUMPTION_AFTER (optimized) as flexible
-    loads shift into solar-producing hours. This computes a load-weighted alignment score in
-    [0, 1] — the average normalized solar availability during the hours the schedule's
-    appliances actually run — and interpolates the rate accordingly. Dragging an appliance to
-    a sunnier hour raises the rate (lowers the bill); moving it to night leaves it at baseline.
-    Only schedule entries are considered, so fixed appliances (absent from `schedule`) don't
-    dilute the score.
+    Uses the EXACT per-appliance economics the QUBO minimizes (qubo_builder.build_qubo's
+    H_solar term): for an appliance scheduled at hour h, the solar credit is
+    min(energy_kwh, solar_kwh[h]) * price_per_kwh[h] — the marginal-price value of the energy
+    covered directly by rooftop solar at that hour. Summing over the scheduled appliances
+    gives the day's saving; the caller scales by 30 for the month. Deriving bill_after from
+    this same daily_profile (the very DataFrame QAOA optimized over) keeps the displayed
+    savings consistent with the objective the quantum solver minimized — not a separate
+    heuristic — and makes the bill respond to weather (scales solar_kwh) and day_of_month
+    (shifts the marginal tier price), exactly like the QAOA result does.
     """
-    peak_solar = max(float(s) for s in solar_profile)
-    app_map = {a.name: a for a in appliances}
-    weighted_solar = 0.0
-    total_load = 0.0
+    by_name = {a.name: a for a in appliances}
+    solar = dict(zip(daily_profile["hour"], daily_profile["solar_kwh"]))
+    price = dict(zip(daily_profile["hour"], daily_profile["price_per_kwh"]))
+    total = 0.0
     for name, hour in schedule.items():
-        app = app_map.get(name)
-        if app is None:
+        app = by_name.get(name)
+        if app is None or hour not in solar:
             continue
-        duration = max(1, int(round(app.duration_hours)))
-        kwh_per_hour = app.power_w / 1000.0
-        for h in range(duration):
-            solar_norm = float(solar_profile[(hour + h) % 24]) / peak_solar if peak_solar else 0.0
-            weighted_solar += kwh_per_hour * solar_norm
-            total_load += kwh_per_hour
-
-    alignment = weighted_solar / total_load if total_load > 0 else 0.0
-    return calc.SELF_CONSUMPTION_BEFORE + (calc.SELF_CONSUMPTION_AFTER - calc.SELF_CONSUMPTION_BEFORE) * alignment
+        energy_kwh = app.power_w / 1000.0 * app.duration_hours
+        total += min(energy_kwh, float(solar[hour])) * float(price[hour])
+    return total
 
 
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
@@ -159,17 +153,18 @@ def optimize(
     for name, hour in pinned_to_apply.items():
         result.schedule[name] = hour
 
-    # Per-user bill: bill_before uses static baseline; bill_after is calculated dynamically
-    # from the actual schedule so dragging appliances to different hours changes the bill.
+    # Per-user bill. bill_before is the un-optimized baseline (user's own monthly total with
+    # the documented SELF_CONSUMPTION_BEFORE solar self-consumption). bill_after subtracts the
+    # incremental monthly saving from scheduling flexible loads into solar hours, valued with
+    # the SAME min(energy, solar)*price economics the QUBO/QAOA minimized over `profile` — so
+    # the displayed savings are derived from the optimizer's objective, and dragging an
+    # appliance (or changing weather / day_of_month) moves the bill exactly as QAOA would.
     user_monthly_kwh = total_monthly_kwh(user_appliances)
-    solar_daily = generate_solar_profile(weather_condition=payload.weather_condition)
-
     grid_before = max(0.0, calc.grid_purchase_kwh(calc.SELF_CONSUMPTION_BEFORE, user_monthly_kwh))
     bill_before = calc.calculate_bill(grid_before)
 
-    rate_after = _schedule_self_consumption_rate(result.schedule, user_appliances, solar_daily)
-    grid_after = max(0.0, calc.grid_purchase_kwh(rate_after, user_monthly_kwh))
-    bill_after = calc.calculate_bill(grid_after)
+    monthly_solar_savings = _daily_solar_savings_vnd(result.schedule, user_appliances, profile) * 30.0
+    bill_after = max(0.0, bill_before - monthly_solar_savings)
     savings_percent = (bill_before - bill_after) / bill_before * 100 if bill_before > 0 else 0.0
 
     gantt_fig = visualizer.plot_schedule_gantt(result.schedule, user_appliances)
