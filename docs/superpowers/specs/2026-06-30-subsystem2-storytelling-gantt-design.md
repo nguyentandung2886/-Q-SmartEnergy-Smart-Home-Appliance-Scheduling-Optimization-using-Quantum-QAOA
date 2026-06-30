@@ -101,6 +101,12 @@ for name, hour in pinned.items():
     result.schedule[name] = hour
 ```
 
+**Note — gantt_chart_png with pinned appliances:** The backend still calls
+`visualizer.plot_schedule_gantt(result.schedule, flexible)` where `flexible` no longer
+contains pinned appliances (they were overridden to is_flexible=False). The PNG may
+omit pinned appliance rows. This is acceptable because Dashboard no longer displays
+`gantt_chart_png` (replaced by GanttEditor); History.jsx shows no charts.
+
 ### 1b. `routers/explain_router.py` (NEW)
 
 ```python
@@ -233,7 +239,7 @@ Reset `explainText = ""` when new optimize result arrives.
 
 ### Explain UI in Dashboard
 
-Position in results section (after GanttEditor, before bill chart... actually after bill chart):
+Position in results section (order from top):
 
 ```
 <ResultsBillNumbers />
