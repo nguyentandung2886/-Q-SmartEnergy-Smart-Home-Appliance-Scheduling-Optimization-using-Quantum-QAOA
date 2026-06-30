@@ -59,7 +59,7 @@ def _build_prompt(req: ExplainRequest) -> str:
 
 def _stream_explanation(prompt: str):
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt, stream=True)
         for chunk in response:
             if chunk.text:
