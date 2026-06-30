@@ -116,6 +116,7 @@ def optimize(
         monthly_kwh=user_monthly_kwh,
         bill_before_vnd=bill_before,
         bill_after_vnd=bill_after,
+        savings_percent=savings_percent,
     )
     db.add(row)
     db.commit()
@@ -146,7 +147,10 @@ def list_schedules(current_user: User = Depends(get_current_user), db: Session =
             solver_used=r.solver_used, used_fallback=r.used_fallback, energy=r.energy,
             schedule=json.loads(r.schedule_json), monthly_kwh=r.monthly_kwh,
             bill_before_vnd=r.bill_before_vnd, bill_after_vnd=r.bill_after_vnd,
-            savings_percent=(r.bill_before_vnd - r.bill_after_vnd) / r.bill_before_vnd * 100 if r.bill_before_vnd > 0 else 0.0,
+            savings_percent=(
+                r.savings_percent if r.savings_percent is not None
+                else (r.bill_before_vnd - r.bill_after_vnd) / r.bill_before_vnd * 100 if r.bill_before_vnd > 0 else 0.0
+            ),
         )
         for r in rows
     ]

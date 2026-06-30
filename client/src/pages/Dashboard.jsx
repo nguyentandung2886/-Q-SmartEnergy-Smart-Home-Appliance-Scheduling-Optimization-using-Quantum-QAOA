@@ -54,7 +54,7 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
 function ResultsBillNumbers({ billBefore, billAfter, savingsPct }) {
   const animBefore = useCountUp(billBefore);
   const animAfter = useCountUp(billAfter);
-  const animSavings = useCountUp(savingsPct * 10) / 10; // one decimal
+  const animSavings = useCountUp(savingsPct, 800, 1);
 
   return (
     <div className="bill-numbers">
@@ -91,8 +91,12 @@ export default function Dashboard() {
   useEffect(() => { loadAppliances(); }, []);
 
   async function loadAppliances() {
-    const data = await getAppliances();
-    setAppliances(data);
+    try {
+      const data = await getAppliances();
+      setAppliances(data);
+    } catch (err) {
+      if (err.response?.status === 401) { logout(); navigate("/login"); }
+    }
   }
 
   async function handleSave(id, payload) {

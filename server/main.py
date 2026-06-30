@@ -15,9 +15,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "q-smartenergy"
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import text
+
 from database import Base, engine
 
 Base.metadata.create_all(bind=engine)
+
+# Idempotent migration: add savings_percent column if not present (existing installs).
+with engine.begin() as _conn:
+    try:
+        _conn.execute(text("ALTER TABLE schedules ADD savings_percent FLOAT NULL"))
+    except Exception:
+        pass  # Column already exists
 
 app = FastAPI(title="Q-SmartEnergy API", version="1.0.0")
 
