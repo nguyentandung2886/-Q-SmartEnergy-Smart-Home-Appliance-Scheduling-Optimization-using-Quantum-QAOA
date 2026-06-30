@@ -62,7 +62,7 @@ def _stream_explanation(prompt: str):
     response = model.generate_content(prompt, stream=True)
     for chunk in response:
         if chunk.text:
-            yield f"data: {chunk.text}\n\n"
+            yield f"data: {chunk.text.replace(chr(10), ' ')}\n\n"
     yield "data: [DONE]\n\n"
 
 

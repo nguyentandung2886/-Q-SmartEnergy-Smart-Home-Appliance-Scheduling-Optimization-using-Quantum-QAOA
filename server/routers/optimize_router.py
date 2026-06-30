@@ -134,7 +134,7 @@ def optimize(
     bill_after = calc.calculate_bill(grid_after)
     savings_percent = (bill_before - bill_after) / bill_before * 100 if bill_before > 0 else 0.0
 
-    gantt_fig = visualizer.plot_schedule_gantt(result.schedule, flexible)
+    gantt_fig = visualizer.plot_schedule_gantt(result.schedule, user_appliances)
     bill_fig = visualizer.plot_cost_comparison(bill_before, bill_after)
     gantt_png = _fig_to_base64(gantt_fig)
     bill_png = _fig_to_base64(bill_fig)
