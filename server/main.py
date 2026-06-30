@@ -89,11 +89,13 @@ app.add_middleware(
 
 from routers import auth_router, appliances_router, optimize_router
 import explain_router
+import forecast_router
 
 app.include_router(auth_router.router)
 app.include_router(appliances_router.router)
 app.include_router(optimize_router.router)
 app.include_router(explain_router.router)
+app.include_router(forecast_router.router)
 
 
 @app.get("/")

@@ -7,6 +7,7 @@ Per-user bill: calculated from the user's OWN appliance list total, not the glob
 import base64
 import io
 import json
+from dataclasses import replace
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
@@ -32,6 +33,9 @@ class OptimizeRequest(BaseModel):
     weather_condition: str = "sunny"
     use_quantum: bool = True
     pinned_schedule: Optional[Dict[str, int]] = None
+    # ML-forecasted run durations (giờ) per appliance name, from /forecast. Override the
+    # catalog duration_hours before building the QUBO so the classical ML layer feeds QAOA.
+    duration_overrides: Optional[Dict[str, float]] = None
 
 
 class _ScheduleBase(BaseModel):
@@ -112,6 +116,17 @@ def optimize(
 ):
     rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
     user_appliances = _db_rows_to_appliances(rows)
+
+    # Apply ML-forecasted durations (from /forecast) before building the QUBO: duration drives
+    # energy_kwh, which sits in both QUBO value axes and the Gantt block length.
+    overrides = payload.duration_overrides or {}
+    if overrides:
+        user_appliances = [
+            replace(a, duration_hours=float(overrides[a.name]))
+            if a.name in overrides and float(overrides[a.name]) > 0
+            else a
+            for a in user_appliances
+        ]
 
     # --- pinned_schedule: validate hours then override flexibility for this run only ---
     pinned = payload.pinned_schedule or {}

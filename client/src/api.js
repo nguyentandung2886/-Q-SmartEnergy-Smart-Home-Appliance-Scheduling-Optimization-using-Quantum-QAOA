@@ -55,6 +55,12 @@ export async function getSchedules() {
   return data;
 }
 
+// ML duration forecast: jobs = { applianceName: { feature: value } }
+export async function forecastDurations(jobs) {
+  const { data } = await apiClient.post("/forecast", { jobs });
+  return data;
+}
+
 // Returns raw fetch Response (not axios) — needed for SSE ReadableStream
 export function explainSchedule(payload) {
   return fetch(`${API_BASE_URL}/explain`, {
