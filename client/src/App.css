@@ -213,6 +213,19 @@ td button { background: none; border: none; cursor: pointer; color: var(--error)
   outline: 2px dashed var(--teal);
   outline-offset: -2px;
 }
+/* Clickable per-hour toggle cells for fixed appliances (multi-interval usage editor) */
+.gantt-cell-clickable {
+  cursor: pointer;
+}
+.gantt-cell-clickable:hover {
+  background: rgba(55, 48, 163, 0.15);
+}
+.gantt-cell-on {
+  background: rgba(55, 48, 163, 0.6);
+}
+.gantt-cell-on:hover {
+  background: rgba(55, 48, 163, 0.75);
+}
 .gantt-block {
   grid-row: 1;
   border-radius: 5px;

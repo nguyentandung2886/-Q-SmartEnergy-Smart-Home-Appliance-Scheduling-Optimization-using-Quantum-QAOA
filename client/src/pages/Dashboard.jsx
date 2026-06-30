@@ -20,27 +20,25 @@ const PROGRAM_LABELS = { quick: "Nhanh", normal: "Thường", heavy: "Mạnh" };
 // Ngưỡng công suất đồng thời an toàn của hộ gia đình (khớp power_threshold_w trong QUBO H_power).
 const SAFE_POWER_W = 5000;
 
-// Tính công suất đồng thời (W) từng giờ từ giờ chạy thật của mọi thiết bị: tải linh hoạt ở
-// giờ được tối ưu (1 khối), tải cố định ở các khung giờ sinh hoạt (có thể nhiều khung). Trả
-// { peakW, peakHour, names } của giờ đỉnh.
-function computePeakPower(flexibleSchedule, fixedWindows, appliances) {
+// Tính công suất đồng thời (W) từng giờ từ giờ chạy thật của mọi thiết bị: tải linh hoạt ở giờ
+// được tối ưu (1 khối liên tục theo thời lượng), tải cố định ở các giờ người dùng bật trên lưới
+// (fixedHours: {tên: [giờ...]}). Trả { peakW, peakHour, names } của giờ đỉnh.
+function computePeakPower(flexibleSchedule, fixedHours, appliances) {
   const watts = Array(24).fill(0);
   const atHour = Array.from({ length: 24 }, () => []);
-  const addBlock = (name, eff, start, len) => {
-    for (let k = 0; k < len; k++) {
-      const hh = (start + k) % 24;
-      watts[hh] += eff;
-      atHour[hh].push(name);
-    }
+  const add = (name, eff, hour) => {
+    watts[hour] += eff;
+    atHour[hour].push(name);
   };
   for (const a of appliances) {
     const eff = a.power_w * (a.quantity ?? 1);
     if (a.is_flexible) {
       const h = flexibleSchedule[a.name];
       if (h == null) continue;
-      addBlock(a.name, eff, h, Math.max(1, Math.ceil(a.duration_hours)));
+      const len = Math.max(1, Math.ceil(a.duration_hours));
+      for (let k = 0; k < len; k++) add(a.name, eff, (h + k) % 24);
     } else {
-      for (const [start, len] of fixedWindows[a.name] ?? []) addBlock(a.name, eff, start, len);
+      for (const hour of fixedHours[a.name] ?? []) add(a.name, eff, hour);
     }
   }
   let peakHour = 0;
@@ -172,16 +170,26 @@ export default function Dashboard() {
   const [forecasting, setForecasting] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [fixedWindows, setFixedWindows] = useState({}); // user-editable fixed-appliance usage windows
+  const [fixedHours, setFixedHours] = useState({}); // {name: number[]} editable ON hours per fixed appliance
   const debounceRef = useRef(null);
   const { logout } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => { loadAppliances(); }, []);
 
-  // Reset editable fixed-appliance windows whenever a new optimization result arrives.
+  // Expand the backend's compact usage windows into per-appliance ON-hour lists whenever a new
+  // optimization result arrives. Users then edit these hour-by-hour in the Gantt grid.
   useEffect(() => {
-    if (result) setFixedWindows(result.fixed_windows ?? {});
+    if (!result) return;
+    const expanded = {};
+    for (const [name, windows] of Object.entries(result.fixed_windows ?? {})) {
+      const hours = new Set();
+      for (const [start, len] of windows) {
+        for (let k = 0; k < len; k++) hours.add((start + k) % 24);
+      }
+      expanded[name] = [...hours].sort((a, b) => a - b);
+    }
+    setFixedHours(expanded);
   }, [result]);
 
   async function loadAppliances() {
@@ -525,18 +533,22 @@ export default function Dashboard() {
                 shown at their realistic usage windows (possibly several per day) */}
             <GanttEditor
               schedule={result.schedule}
-              fixedWindows={fixedWindows}
+              fixedHours={fixedHours}
               appliances={appliances}
               onPinnedChange={handlePinnedChange}
-              onFixedWindowsChange={setFixedWindows}
+              onFixedHoursChange={setFixedHours}
               disabled={reoptimizing}
             />
+            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.4rem" }}>
+              ⟳ Tải linh hoạt: kéo khối để tối ưu lại. ⠿ Tải cố định: bấm vào ô giờ để bật/tắt
+              theo nhu cầu thật (có thể nhiều khung giờ rời nhau, vd điều hòa 0-3h rồi 10-13h).
+            </p>
 
             {/* Power-overload safety check (+8đ Mức Dễ): cảnh báo công suất đồng thời */}
             {(() => {
               const peak = computePeakPower(
                 result.schedule,
-                fixedWindows,
+                fixedHours,
                 appliances
               );
               const overload = peak.peakW > SAFE_POWER_W;
