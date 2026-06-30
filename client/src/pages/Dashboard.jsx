@@ -214,14 +214,6 @@ export default function Dashboard() {
     await loadAppliances();
   }
 
-  async function handleSetAllFlexible() {
-    await Promise.all(
-      appliances
-        .filter((a) => !a.is_flexible)
-        .map((a) => updateAppliance(a.id, { ...a, is_flexible: true }))
-    );
-    await loadAppliances();
-  }
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -407,18 +399,6 @@ export default function Dashboard() {
             ))}
           </tbody>
         </table>
-        {appliances.some((a) => !a.is_flexible) && (
-          <button
-            onClick={handleSetAllFlexible}
-            style={{
-              margin: "0.5rem 0", background: "none", border: "1px solid var(--teal)",
-              color: "var(--teal)", borderRadius: "6px", padding: "4px 12px",
-              cursor: "pointer", fontSize: "0.82rem", fontWeight: 600,
-            }}
-          >
-            ⟳ Đặt tất cả thành Linh hoạt
-          </button>
-        )}
         <form onSubmit={handleAdd} className="add-form">
           <input placeholder="Tên thiết bị mới" value={newName}
             onChange={(e) => setNewName(e.target.value)} required />
