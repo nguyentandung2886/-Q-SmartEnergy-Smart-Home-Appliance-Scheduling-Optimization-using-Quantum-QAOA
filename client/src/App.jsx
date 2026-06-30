@@ -1,13 +1,11 @@
+import { useLocation } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./AuthContext";
-
-// Pages created in Tasks 8-10 — import them here once they exist.
-// For now, use placeholder stubs so routing is testable immediately.
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
-
 import "./App.css";
 
 function RequireAuth({ children }) {
@@ -15,22 +13,25 @@ function RequireAuth({ children }) {
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
-function AppRoutes() {
+function AnimatedRoutes() {
+  const location = useLocation();
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-      <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </AnimatePresence>
   );
 }
 
 function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <AnimatedRoutes />
     </AuthProvider>
   );
 }

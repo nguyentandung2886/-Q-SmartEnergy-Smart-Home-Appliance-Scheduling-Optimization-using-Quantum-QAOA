@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { motion } from "framer-motion";
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -25,7 +26,13 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-page">
+    <motion.div
+      className="auth-page"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.25 }}
+    >
       <form onSubmit={handleSubmit} className="auth-form">
         <h1>Q-SmartEnergy</h1>
         <p style={{ textAlign: "center", color: "var(--text-muted)" }}>
@@ -40,13 +47,18 @@ export default function Login() {
           Mật khẩu
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
-        <button type="submit" disabled={loading}>
+        <motion.button
+          type="submit"
+          disabled={loading}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+        >
           {loading ? "Đang đăng nhập..." : "Đăng nhập"}
-        </button>
+        </motion.button>
         <p>
           Chưa có tài khoản? <Link to="/register">Đăng ký</Link>
         </p>
       </form>
-    </div>
+    </motion.div>
   );
 }

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   createAppliance, deleteAppliance, getAppliances,
   optimize as apiOptimize, updateAppliance,
 } from "../api";
 import { useAuth } from "../AuthContext";
+import { useCountUp } from "../useCountUp";
 
 const WEATHER_OPTIONS = [
   { value: "sunny", label: "☀️ Nắng" },
@@ -46,6 +48,30 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
         <button onClick={() => onDelete(appliance.id)}>Xóa</button>
       </td>
     </tr>
+  );
+}
+
+function ResultsBillNumbers({ billBefore, billAfter, savingsPct }) {
+  const animBefore = useCountUp(billBefore);
+  const animAfter = useCountUp(billAfter);
+  const animSavings = useCountUp(savingsPct * 10) / 10; // one decimal
+
+  return (
+    <div className="bill-numbers">
+      <div className="bill-item">
+        <strong>{animBefore.toLocaleString("vi-VN")}đ</strong>
+        Hóa đơn trước
+      </div>
+      <div style={{ fontSize: "1.5rem", alignSelf: "center" }}>→</div>
+      <div className="bill-item">
+        <strong style={{ color: "var(--teal)" }}>{animAfter.toLocaleString("vi-VN")}đ</strong>
+        Sau tối ưu hóa
+      </div>
+      <div className="bill-item">
+        <strong className="savings-highlight">↓ {animSavings.toFixed(1)}%</strong>
+        Tiết kiệm
+      </div>
+    </div>
   );
 }
 
@@ -106,7 +132,13 @@ export default function Dashboard() {
   const totalKwh = appliances.reduce((sum, a) => sum + a.power_w / 1000 * a.duration_hours * 30, 0);
 
   return (
-    <div className="dashboard">
+    <motion.div
+      className="dashboard"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+    >
       <header className="dashboard-header">
         <h1>Q-SmartEnergy</h1>
         <nav>
@@ -150,43 +182,57 @@ export default function Dashboard() {
               {WEATHER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <button className="btn-optimize" onClick={handleOptimize} disabled={loading}>
+          <motion.button
+            className="btn-optimize"
+            onClick={handleOptimize}
+            disabled={loading}
+            whileHover={{ scale: loading ? 1 : 1.03 }}
+            whileTap={{ scale: loading ? 1 : 0.97 }}
+          >
             {loading ? "⏳ Đang tối ưu..." : "⚡ Tối ưu hóa"}
-          </button>
+          </motion.button>
         </div>
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ repeat: Infinity, duration: 1.2 }}
+            style={{ marginTop: "0.75rem", color: "var(--indigo)", fontWeight: 600 }}
+          >
+            ⚡ Thuật toán lượng tử đang xử lý...
+          </motion.div>
+        )}
         {error && <p className="auth-error" style={{ marginTop: "0.75rem" }}>{error}</p>}
       </div>
 
       {/* Results */}
-      {result && (
-        <div className="section-card results-section">
-          <h2>Kết quả</h2>
-          <div className="bill-numbers">
-            <div className="bill-item">
-              <strong>{result.bill_before_vnd.toLocaleString("vi-VN")}đ</strong>
-              Hóa đơn trước
-            </div>
-            <div style={{ fontSize: "1.5rem", alignSelf: "center" }}>→</div>
-            <div className="bill-item">
-              <strong style={{ color: "var(--teal)" }}>{result.bill_after_vnd.toLocaleString("vi-VN")}đ</strong>
-              Sau tối ưu hóa
-            </div>
-            <div className="bill-item">
-              <strong className="savings-highlight">↓ {result.savings_percent.toFixed(1)}%</strong>
-              Tiết kiệm
-            </div>
-          </div>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
-            Solver: {result.solver_used}{result.used_fallback ? " (dùng fallback cổ điển)" : ""}
-          </p>
-          {result.gantt_chart_png && (
-            <img src={`data:image/png;base64,${result.gantt_chart_png}`} alt="Lịch chạy thiết bị tối ưu" />
-          )}
-          {result.bill_chart_png && (
-            <img src={`data:image/png;base64,${result.bill_chart_png}`} alt="So sánh hóa đơn điện" style={{ marginTop: "1rem" }} />
-          )}
-        </div>
-      )}
-    </div>
+      <AnimatePresence>
+        {result && (
+          <motion.div
+            className="section-card results-section"
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+          >
+            <h2>Kết quả</h2>
+            <ResultsBillNumbers
+              billBefore={result.bill_before_vnd}
+              billAfter={result.bill_after_vnd}
+              savingsPct={result.savings_percent}
+            />
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+              Solver: {result.solver_used}{result.used_fallback ? " (dùng fallback cổ điển)" : ""}
+            </p>
+            {result.gantt_chart_png && (
+              <img src={`data:image/png;base64,${result.gantt_chart_png}`} alt="Lịch chạy thiết bị tối ưu" />
+            )}
+            {result.bill_chart_png && (
+              <img src={`data:image/png;base64,${result.bill_chart_png}`} alt="So sánh hóa đơn điện" style={{ marginTop: "1rem" }} />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

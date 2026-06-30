@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { motion } from "framer-motion";
 
 export default function Register() {
   const [username, setUsername] = useState("");
@@ -26,7 +27,13 @@ export default function Register() {
   }
 
   return (
-    <div className="auth-page">
+    <motion.div
+      className="auth-page"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.25 }}
+    >
       <form onSubmit={handleSubmit} className="auth-form">
         <h1>Tạo tài khoản</h1>
         {error && <p className="auth-error">{error}</p>}
@@ -38,13 +45,18 @@ export default function Register() {
           Mật khẩu (tối thiểu 8 ký tự)
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
         </label>
-        <button type="submit" disabled={loading}>
+        <motion.button
+          type="submit"
+          disabled={loading}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+        >
           {loading ? "Đang tạo tài khoản..." : "Đăng ký"}
-        </button>
+        </motion.button>
         <p>
           Đã có tài khoản? <Link to="/login">Đăng nhập</Link>
         </p>
       </form>
-    </div>
+    </motion.div>
   );
 }
