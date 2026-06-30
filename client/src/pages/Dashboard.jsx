@@ -20,19 +20,26 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
   const [duration, setDuration] = useState(appliance.duration_hours);
   const [quantity, setQuantity] = useState(appliance.quantity ?? 1);
 
-  function save() {
+  function save(overrides = {}) {
+    onSave(appliance.id, {
+      ...appliance,
+      power_w: Number(power),
+      duration_hours: Number(duration),
+      quantity: Number(quantity),
+      ...overrides,
+    });
+  }
+
+  function handleBlur() {
     const changed =
       Number(power) !== appliance.power_w ||
       Number(duration) !== appliance.duration_hours ||
       Number(quantity) !== (appliance.quantity ?? 1);
-    if (changed) {
-      onSave(appliance.id, {
-        ...appliance,
-        power_w: Number(power),
-        duration_hours: Number(duration),
-        quantity: Number(quantity),
-      });
-    }
+    if (changed) save();
+  }
+
+  function toggleFlexible() {
+    save({ is_flexible: !appliance.is_flexible });
   }
 
   return (
@@ -40,18 +47,29 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
       <td>{appliance.name}</td>
       <td>
         <input type="number" value={power} min={1}
-          onChange={(e) => setPower(e.target.value)} onBlur={save} />
+          onChange={(e) => setPower(e.target.value)} onBlur={handleBlur} />
       </td>
       <td>
         <input type="number" value={duration} min={0.1} step={0.1}
-          onChange={(e) => setDuration(e.target.value)} onBlur={save} />
+          onChange={(e) => setDuration(e.target.value)} onBlur={handleBlur} />
       </td>
       <td>
         <input type="number" value={quantity} min={1} step={1}
-          onChange={(e) => setQuantity(e.target.value)} onBlur={save} />
+          onChange={(e) => setQuantity(e.target.value)} onBlur={handleBlur} />
       </td>
-      <td style={{ color: appliance.is_flexible ? "var(--teal)" : "var(--text-muted)" }}>
-        {appliance.is_flexible ? "Linh hoạt" : "Cố định"}
+      <td>
+        <button
+          onClick={toggleFlexible}
+          style={{
+            background: "none", border: "none", cursor: "pointer", padding: "2px 6px",
+            borderRadius: "4px", fontSize: "0.8rem", fontWeight: 600,
+            color: appliance.is_flexible ? "var(--teal)" : "var(--text-muted)",
+            border: `1px solid ${appliance.is_flexible ? "var(--teal)" : "#d1d5db"}`,
+          }}
+          title="Bấm để đổi loại"
+        >
+          {appliance.is_flexible ? "Linh hoạt" : "Cố định"}
+        </button>
       </td>
       <td>
         <button onClick={() => onDelete(appliance.id)}>Xóa</button>
@@ -121,6 +139,15 @@ export default function Dashboard() {
 
   async function handleDelete(id) {
     await deleteAppliance(id);
+    await loadAppliances();
+  }
+
+  async function handleSetAllFlexible() {
+    await Promise.all(
+      appliances
+        .filter((a) => !a.is_flexible)
+        .map((a) => updateAppliance(a.id, { ...a, is_flexible: true }))
+    );
     await loadAppliances();
   }
 
@@ -243,6 +270,18 @@ export default function Dashboard() {
             ))}
           </tbody>
         </table>
+        {appliances.some((a) => !a.is_flexible) && (
+          <button
+            onClick={handleSetAllFlexible}
+            style={{
+              margin: "0.5rem 0", background: "none", border: "1px solid var(--teal)",
+              color: "var(--teal)", borderRadius: "6px", padding: "4px 12px",
+              cursor: "pointer", fontSize: "0.82rem", fontWeight: 600,
+            }}
+          >
+            ⟳ Đặt tất cả thành Linh hoạt
+          </button>
+        )}
         <form onSubmit={handleAdd} className="add-form">
           <input placeholder="Tên thiết bị mới" value={newName}
             onChange={(e) => setNewName(e.target.value)} required />
