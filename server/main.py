@@ -29,9 +29,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers are added here in Tasks 4-6:
-# from routers import auth_router, appliances_router, optimize_router
-# app.include_router(auth_router.router)
+from routers import auth_router
+
+app.include_router(auth_router.router)
+# Remaining routers added in Tasks 5-6:
 # app.include_router(appliances_router.router)
 # app.include_router(optimize_router.router)
 

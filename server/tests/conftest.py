@@ -30,6 +30,7 @@ _TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_test_e
 @pytest.fixture(scope="session", autouse=True)
 def _create_test_schema():
     """Create all tables in the test DB once per test session, drop them after."""
+    import models  # noqa: F401 — registers ORM models with Base.metadata
     from database import Base
 
     Base.metadata.create_all(bind=_test_engine)
