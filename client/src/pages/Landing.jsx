@@ -130,22 +130,7 @@ export default function Landing() {
         </div>
         
         <div>
-          <button 
-            onClick={() => navigate('/login')}
-            style={{ 
-              background: 'rgba(6, 182, 212, 0.1)', 
-              color: 'var(--quantum)', 
-              border: '1px solid var(--quantum)', 
-              padding: '0.6rem 1.5rem', 
-              borderRadius: '50px', 
-              fontWeight: '600', 
-              fontFamily: 'Montserrat',
-              cursor: 'pointer',
-              transition: 'all 0.3s'
-            }}
-            onMouseOver={(e) => { e.target.style.background = 'var(--quantum)'; e.target.style.color = '#fff'; e.target.style.boxShadow = '0 0 20px var(--quantum-glow)'; }}
-            onMouseOut={(e) => { e.target.style.background = 'rgba(6, 182, 212, 0.1)'; e.target.style.color = 'var(--quantum)'; e.target.style.boxShadow = 'none'; }}
-          >
+          <button className="btn" onClick={() => navigate('/login')}>
             Đăng nhập
           </button>
         </div>
@@ -431,9 +416,9 @@ export default function Landing() {
                 className="glass-panel" 
                 style={{ padding: '0', overflow: 'hidden' }}
               >
-                <button 
+                <button
                   onClick={() => toggleFaq(i)}
-                  style={{ width: '100%', padding: '1.5rem 2rem', background: 'transparent', border: 'none', color: '#fff', fontSize: '1.2rem', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                  style={{ width: '100%', padding: '1.5rem 2rem', background: 'transparent', border: 'none', color: 'var(--text-strong)', fontSize: '1.15rem', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
                 >
                   <span style={{ fontFamily: 'Montserrat', fontWeight: '600' }}>{faq.q}</span>
                   {activeFaq === i ? <ChevronUp color="var(--quantum)" /> : <ChevronDown color="var(--text-muted)" />}

@@ -180,6 +180,11 @@ td input { width: 92px; }
 .esg-row:last-child { border-bottom: none; }
 .esg-row strong { color: var(--text-strong); }
 
+/* ── History ────────────────────────────────────────────── */
+.history-page { max-width: 1160px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+.history-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
+.history-head h1 { font-size: 2rem; margin-top: 0.3rem; }
+
 /* ── Empty state ────────────────────────────────────────── */
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 1rem; text-align: center; padding: 4rem 2rem; color: var(--text-muted); }
 

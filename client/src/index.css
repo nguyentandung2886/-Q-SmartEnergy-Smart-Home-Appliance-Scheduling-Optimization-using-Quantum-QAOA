@@ -35,6 +35,12 @@
   --radius: 12px;
   --radius-sm: 6px;
 
+  /* Back-compat aliases for legacy references (Landing/History use these) */
+  --quantum: var(--accent);
+  --energy: var(--pale-green-fg);
+  --text-muted-legacy: var(--text-muted);
+  --glass-border: var(--border);
+
   color-scheme: light;
 }
 
