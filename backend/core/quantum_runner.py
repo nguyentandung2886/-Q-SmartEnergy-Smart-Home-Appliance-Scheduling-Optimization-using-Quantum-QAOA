@@ -300,8 +300,11 @@ class QuantumScheduler:
 
         - use_quantum=True: thử QAOA. Nếu raise QAOAExecutionError HOẶC bitstring
           không one-hot hợp lệ -> fallback solve_classical_bruteforce, used_fallback=True,
-          solver_used="classical_bruteforce". Nếu QAOA thành công VÀ hợp lệ ->
-          solver_used="qaoa", used_fallback=False.
+          solver_used="classical_bruteforce". Nếu QAOA thành công VÀ hợp lệ nhưng
+          brute-force (global optimum, rẻ ở quy mô PoC) cho năng lượng THẤP HƠN thực sự
+          -> dùng nghiệm brute-force, used_fallback=True, solver_used="classical_bruteforce".
+          Chỉ khi QAOA hợp lệ VÀ đã bằng global optimum -> solver_used="qaoa",
+          used_fallback=False.
         - use_quantum=False: dùng classical trực tiếp (lựa chọn chủ động, KHÔNG phải
           fallback): used_fallback=False, solver_used="classical_bruteforce".
         """
@@ -326,6 +329,15 @@ class QuantumScheduler:
             bitstring, energy = solve_classical_bruteforce(self.Q)
             runtime = time.perf_counter() - start
             return self._build_result(bitstring, energy, "classical_bruteforce", True, runtime)
+
+        # QAOA hợp lệ nhưng KHÔNG đảm bảo là global optimum (có thể kẹt ở nghiệm khả thi
+        # nhưng dưới-tối-ưu). Ở quy mô PoC (2^n nhỏ) brute-force chạy tức thời và cho global
+        # optimum chắc chắn, nên luôn đối chiếu: nếu brute-force tốt hơn thực sự thì dùng nó
+        # -> lịch giao ra luôn là nghiệm tiết kiệm nhất, không nhận nghiệm QAOA dưới-tối-ưu.
+        bf_bitstring, bf_energy = solve_classical_bruteforce(self.Q)
+        if bf_energy < energy - 1e-6:
+            runtime = time.perf_counter() - start
+            return self._build_result(bf_bitstring, bf_energy, "classical_bruteforce", True, runtime)
 
         runtime = time.perf_counter() - start
         return self._build_result(bitstring, energy, "qaoa", False, runtime)
