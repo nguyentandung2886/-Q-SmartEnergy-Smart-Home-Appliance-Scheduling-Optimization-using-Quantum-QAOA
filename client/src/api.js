@@ -1,30 +1,36 @@
 /**
  * Axios client + all backend API calls.
- * JWT token is read from localStorage and injected as Authorization header on every request.
+ * The Supabase access token is read from the current session and injected as the
+ * Authorization header on every request.
  */
 import axios from "axios";
+import { supabase } from "./supabaseClient";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 const apiClient = axios.create({ baseURL: API_BASE_URL });
 
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+apiClient.interceptors.request.use(async (config) => {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
-export async function register(username, password) {
-  const { data } = await apiClient.post("/auth/register", { username, password });
-  return data;
-}
-
-export async function login(username, password) {
-  const { data } = await apiClient.post("/auth/login", { username, password });
-  return data;
-}
+// If the backend rejects the token (stale/expired/deleted Supabase session),
+// clear the local session so the app falls back to the login screen instead of
+// looping on 401s with a dead session.
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      await supabase.auth.signOut({ scope: "local" });
+    }
+    return Promise.reject(error);
+  }
+);
 
 export async function getAppliances() {
   const { data } = await apiClient.get("/appliances");
@@ -79,12 +85,14 @@ export async function sendAlert(params) {
 }
 
 // Returns raw fetch Response (not axios) — needed for SSE ReadableStream
-export function explainSchedule(payload) {
+export async function explainSchedule(payload) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
   return fetch(`${API_BASE_URL}/explain`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${localStorage.getItem("token")}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });

@@ -4,7 +4,7 @@ import { useAuth } from "../AuthContext";
 import { motion } from "framer-motion";
 
 export default function Login() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,10 +16,10 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(username, password);
+      await login(email, password);
       navigate("/dashboard");
-    } catch {
-      setError("Sai tên đăng nhập hoặc mật khẩu.");
+    } catch (err) {
+      setError(err.message || "Sai email hoặc mật khẩu.");
     } finally {
       setLoading(false);
     }
@@ -40,8 +40,8 @@ export default function Login() {
         </p>
         {error && <p className="auth-error">{error}</p>}
         <label>
-          Tên đăng nhập
-          <input value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
+          Email
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
         </label>
         <label>
           Mật khẩu

@@ -1,45 +1,54 @@
 """
-JWT + bcrypt utilities for Q-SmartEnergy backend.
-JWT secret must come from JWT_SECRET env var (see .env.example).
-Passwords stored as bcrypt hashes — never plaintext.
+Supabase Auth token validation for Q-SmartEnergy backend.
+
+Signup/login happen client-side via Supabase Auth. The backend only *validates*
+the Supabase access token (asymmetric JWKS — ES256/RS256) and maps it to a local
+`users` row (get-or-create), keyed by the Supabase user UUID (`sub`).
+Requires SUPABASE_URL in the environment (see .env.example).
 """
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from jwt import PyJWKClient, PyJWKClientError
 from sqlalchemy.orm import Session
 
+from core import appliance_catalog
 from db.database import get_db
-from db.models import User
+from db.models import ApplianceModel, User
 
-JWT_SECRET = os.environ.get("JWT_SECRET")
-if not JWT_SECRET or JWT_SECRET.startswith("replace") or len(JWT_SECRET) < 32:
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+if not SUPABASE_URL:
     raise RuntimeError(
-        "JWT_SECRET must be a strong random value (>= 32 chars), not the placeholder. "
-        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\" "
-        "and set it in server/.env"
+        "SUPABASE_URL must be set (e.g. https://<ref>.supabase.co) — used to verify "
+        "Supabase Auth tokens. See .env.example."
     )
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24
+SUPABASE_URL = SUPABASE_URL.rstrip("/")
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+JWT_ISSUER = f"{SUPABASE_URL}/auth/v1"
+JWT_AUDIENCE = "authenticated"
+_JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+# Tolerate clock skew between this machine and Supabase so freshly-issued tokens
+# (iat ~= now) aren't rejected as "not yet valid". Also relaxes exp by the same margin.
+_CLOCK_SKEW_LEEWAY = timedelta(seconds=120)
+
+# PyJWKClient caches fetched signing keys, so this is a single lazy HTTP fetch.
+_jwks_client = PyJWKClient(_JWKS_URL)
+_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=True)
 
 
-def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    return _pwd_context.verify(password, password_hash)
-
-
-def create_access_token(username: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
-    return jwt.encode({"sub": username, "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+def _seed_default_appliances(db: Session, user: User) -> None:
+    for a in appliance_catalog.HOUSEHOLD_APPLIANCES:
+        db.add(ApplianceModel(
+            user_id=user.id,
+            name=a.name,
+            power_w=a.power_w,
+            duration_hours=a.duration_hours,
+            candidate_hours=list(a.candidate_hours),
+            is_flexible=a.is_flexible,
+        ))
 
 
 def get_current_user(
@@ -52,14 +61,29 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        signing_key = _jwks_client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256", "RS256"],
+            audience=JWT_AUDIENCE,
+            issuer=JWT_ISSUER,
+            leeway=_CLOCK_SKEW_LEEWAY,
+        )
+        supabase_uid: str = payload.get("sub")
+        if not supabase_uid:
             raise credentials_error
-    except JWTError:
+    except (jwt.PyJWTError, PyJWKClientError):
         raise credentials_error
 
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.supabase_uid == supabase_uid).first()
     if user is None:
-        raise credentials_error
+        # First time we see this Supabase user: create their local row and seed
+        # the default household appliances (previously done on /auth/register).
+        user = User(supabase_uid=supabase_uid, email=payload.get("email"))
+        db.add(user)
+        db.flush()  # get user.id before seeding appliances
+        _seed_default_appliances(db, user)
+        db.commit()
+        db.refresh(user)
     return user

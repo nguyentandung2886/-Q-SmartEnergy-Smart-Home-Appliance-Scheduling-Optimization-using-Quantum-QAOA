@@ -1,7 +1,8 @@
 """
 SQLAlchemy ORM models: User, ApplianceModel, ScheduleModel.
 Schema:
-  users       — id, username (unique), password_hash (bcrypt), created_at
+  users       — id, supabase_uid (unique, from Supabase Auth), email,
+                username (optional/legacy display), created_at
   appliances  — id, user_id FK, name, power_w, duration_hours,
                 candidate_hours (JSON list of ints, [] if is_flexible=False),
                 is_flexible, created_at
@@ -20,8 +21,9 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
+    supabase_uid = Column(String(36), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=True)
+    username = Column(String(50), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     appliances = relationship("ApplianceModel", back_populates="user", cascade="all, delete-orphan")

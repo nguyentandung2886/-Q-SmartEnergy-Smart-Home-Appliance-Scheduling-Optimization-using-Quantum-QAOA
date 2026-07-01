@@ -15,7 +15,7 @@ flowchart LR
         UI[Dashboard + GanttEditor]
     end
     subgraph Server["FastAPI server"]
-        AUTH[auth / JWT]
+        AUTH[auth / Supabase JWKS]
         APP[appliances CRUD]
         OPT[optimize + recompute-bill]
         FC[forecast]
@@ -27,10 +27,13 @@ flowchart LR
         CALC[calc - EVN tiers]
         FCAST[forecaster - ML]
     end
-    DB[(SQLite)]
+    DB[(Supabase Postgres)]
+    SB[(Supabase Auth)]
     GEM[(Gemini API)]
 
+    UI -->|signup/login| SB
     UI -->|/api| Server
+    AUTH -->|verify token| SB
     AUTH --- DB
     APP --- DB
     OPT --> QUBO --> QRUN
@@ -38,6 +41,11 @@ flowchart LR
     FC --> FCAST
     EXP --> GEM
 ```
+
+**Auth flow:** signup/login happen in the browser via **Supabase Auth** (email +
+password). The frontend attaches the Supabase access token to every API call; the
+backend verifies it against Supabase's public keys (JWKS) and maps it to a local
+user row (created on first request, seeded with default appliances).
 
 **Request flow:** the browser talks to the backend at `/api` (proxied by nginx
 to the `api` container in Docker, or `http://localhost:8000` in local dev). The
@@ -51,7 +59,7 @@ summary from Gemini via Server-Sent Events.
 
 | Path | What it is |
 |------|------------|
-| [`backend/`](backend/) | FastAPI backend + Quantum optimization pipeline (QAOA, EVN pricing, ML). JWT auth, appliance CRUD, `/optimize`, `/recompute-bill`, `/forecast`, `/explain` (SSE). SQLAlchemy + SQLite. |
+| [`backend/`](backend/) | FastAPI backend + Quantum optimization pipeline (QAOA, EVN pricing, ML). Supabase Auth token verification, appliance CRUD, `/optimize`, `/recompute-bill`, `/forecast`, `/explain` (SSE). SQLAlchemy + Supabase Postgres. |
 | [`client/`](client/) | React + Vite dashboard: appliance editor, drag-and-drop Gantt scheduler, bill comparison, Gemini explanation. **This is the official user interface.** |
 
 > **One unified API.** The backend incorporates both the FastAPI web layer (`backend/api/`)
@@ -59,32 +67,37 @@ summary from Gemini via Server-Sent Events.
 
 ## Quick Start (Docker)
 
-Requires Docker + Docker Compose.
+Requires Docker + Docker Compose, plus a **Supabase project** (create one at
+supabase.com). In the Supabase dashboard, under **Authentication → Providers →
+Email**, turn **off "Confirm email"** so signups can log in immediately.
 
 ```bash
-cp .env.example .env        # then edit .env: set a 32+ char JWT_SECRET and
-                            # (optionally) your GEMINI_API_KEY. The SQLite
-                            # DATABASE_URL default already works as-is.
+cp .env.example .env        # then edit .env: set DATABASE_URL (Supabase Postgres),
+                            # SUPABASE_URL, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
+                            # and (optionally) GEMINI_API_KEY.
+cd backend && alembic upgrade head && cd ..   # create tables in Supabase (once)
 docker compose up --build
 ```
 
 - Frontend: http://localhost:3000
 - API: http://localhost:8000 (also reachable same-origin at `/api` via the frontend)
 
-The database is SQLite, stored on the `api_data` Docker volume — no separate
-database container, no password, nothing to wait for on startup. Docker Compose
-reads the single `.env` automatically, both for `${...}` substitution in
-`docker-compose.yml` and as the `api` container's environment. `.env` is
-gitignored; never commit real secrets.
+The database is **Supabase Postgres**. Get the connection string from
+Supabase → Project Settings → Database (Session pooler or Direct connection, port
+5432 — not the transaction pooler on 6543). Docker Compose reads the single `.env`
+automatically, both for `${...}` substitution in `docker-compose.yml` and as the
+`api` container's environment. `.env` is gitignored; never commit real secrets.
+(The old `api_data` SQLite volume is no longer used.)
 
 ## Local Development
 
-**Backend** (from `backend/` — SQLite needs no external database):
+**Backend** (from `backend/`):
 
 ```bash
 pip install -r requirements.txt
-# backend/.env holds JWT_SECRET (32+ chars) and GEMINI_API_KEY; DATABASE_URL
-# defaults to a local SQLite file (sqlite:///./q_smartenergy.db).
+# backend/.env holds DATABASE_URL (Supabase Postgres), SUPABASE_URL, and
+# (optionally) GEMINI_API_KEY. Run migrations once against Supabase:
+alembic upgrade head
 uvicorn main:app --reload --port 8000
 ```
 
@@ -92,25 +105,27 @@ uvicorn main:app --reload --port 8000
 
 ```bash
 npm install
+# create client/.env with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+# (and VITE_API_BASE_URL=http://localhost:8000). See client/.env.example.
 npm run dev        # http://localhost:5173, proxying API to http://localhost:8000
 ```
 
 ## Database Migrations (Alembic)
 
-The schema is versioned with Alembic (`backend/db/alembic/`). For local dev and the
-Docker demo the app calls `create_all` on startup, so the database just works
-out of the box. For a managed deployment, run migrations as a deploy step:
+The schema is versioned with Alembic (`backend/db/alembic/`). The app does **not**
+create tables on startup, so run migrations once against your Supabase database
+before first use (and after any model change):
 
 ```bash
 cd backend
-alembic upgrade head                       # apply migrations to DATABASE_URL
+alembic upgrade head                       # apply migrations to DATABASE_URL (Supabase)
 alembic revision --autogenerate -m "msg"   # after changing backend/db/models.py
 ```
 
 Alembic reads `DATABASE_URL` from the environment (same source as the app) and
 targets `models.py`'s metadata, so generated migrations stay in sync with the
-models. To adopt an existing `create_all` database, run `alembic stamp head`
-once before generating new revisions.
+models. Use the Session pooler / Direct connection (port 5432) for migrations —
+the transaction pooler (6543) does not support the DDL Alembic runs.
 
 ## Tests
 
@@ -186,7 +201,9 @@ implementation.
 - **Pricing model:** EVN cumulative/lũy tiến (staircase) tiers — the marginal
   price depends only on total monthly kWh, never on hour of day. There is no
   time-of-use / peak-hour component.
-- **Security:** `JWT_SECRET` and `GEMINI_API_KEY` come from environment only
-  (never hard-coded); passwords are bcrypt-hashed. The app refuses to start with
-  a placeholder or short `JWT_SECRET`.
+- **Security:** authentication is handled by **Supabase Auth** — passwords never
+  touch this backend. The backend verifies Supabase access tokens against the
+  project's public keys (JWKS); `SUPABASE_URL`, `DATABASE_URL`, and `GEMINI_API_KEY`
+  come from environment only (never hard-coded). The app refuses to start without
+  `SUPABASE_URL`.
 - **Palette:** Indigo `#3730A3`, Teal `#0F766E`, Gold `#CA8A04`.

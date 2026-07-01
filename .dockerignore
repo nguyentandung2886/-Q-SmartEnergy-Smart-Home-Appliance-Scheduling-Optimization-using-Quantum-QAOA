@@ -8,6 +8,8 @@
 !.env.example
 server/.env
 client/.env
+backend/.env
+backend/*.db
 
 # Python
 .venv

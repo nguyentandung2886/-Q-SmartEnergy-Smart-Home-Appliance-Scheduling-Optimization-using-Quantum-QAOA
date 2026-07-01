@@ -19,6 +19,10 @@ from sqlalchemy.pool import StaticPool
 
 load_dotenv()
 
+# auth.py requires SUPABASE_URL at import time; tests stub Supabase JWT validation
+# (see the client fixture) so the value only needs to be present, not real.
+os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
+
 # Tests are hermetic: a shared in-memory SQLite DB, no external server needed.
 # StaticPool keeps a single connection so every session sees the same :memory: DB.
 _test_engine = create_engine(
@@ -54,14 +58,39 @@ def db_session():
 
 @pytest.fixture()
 def client(db_session):
-    """FastAPI TestClient backed by the per-test rolled-back DB session."""
+    """FastAPI TestClient backed by the per-test rolled-back DB session.
+
+    Supabase JWT validation is stubbed: get_current_user is overridden to treat
+    the raw Bearer token as the Supabase UID and get-or-create the local user
+    (seeding default appliances on first use, exactly like production).
+    """
+    from fastapi import Depends, HTTPException, Request, status
+    from auth import _seed_default_appliances, get_current_user
     from db.database import get_db
+    from db.models import User
     from main import app
 
     def _override_get_db():
         yield db_session
 
+    def _override_get_current_user(request: Request, db=Depends(get_db)) -> User:
+        auth = request.headers.get("Authorization", "")
+        token = auth.removeprefix("Bearer ").strip()
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Could not validate credentials")
+        user = db.query(User).filter(User.supabase_uid == token).first()
+        if user is None:
+            user = User(supabase_uid=token, email=f"{token}@test.local")
+            db.add(user)
+            db.flush()
+            _seed_default_appliances(db, user)
+            db.commit()
+            db.refresh(user)
+        return user
+
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = _override_get_current_user
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -69,10 +98,11 @@ def client(db_session):
 
 @pytest.fixture()
 def auth_headers(client):
-    """Returns a factory that registers a user and returns its Bearer headers."""
-    def _make(username: str = "testuser", password: str = "password123") -> dict:
-        response = client.post("/auth/register", json={"username": username, "password": password})
-        assert response.status_code == 200, f"Register failed: {response.text}"
-        token = response.json()["access_token"]
-        return {"Authorization": f"Bearer {token}"}
+    """Returns a factory that yields Bearer headers for a given identity.
+
+    The identity string is used as the fake Supabase UID; the first request for
+    a new identity get-or-creates the user and seeds default appliances.
+    """
+    def _make(identity: str = "testuser", password: str = "unused") -> dict:
+        return {"Authorization": f"Bearer {identity}"}
     return _make

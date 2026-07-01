@@ -1,30 +1,43 @@
-import { createContext, useContext, useState } from "react";
-import { login as apiLogin, register as apiRegister } from "./api";
+import { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "./supabaseClient";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem("token"));
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  async function login(username, password) {
-    const data = await apiLogin(username, password);
-    localStorage.setItem("token", data.access_token);
-    setToken(data.access_token);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  async function login(email, password) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
   }
 
-  async function register(username, password) {
-    const data = await apiRegister(username, password);
-    localStorage.setItem("token", data.access_token);
-    setToken(data.access_token);
+  async function register(email, password) {
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) throw error;
   }
 
-  function logout() {
-    localStorage.removeItem("token");
-    setToken(null);
+  async function logout() {
+    // Local scope: always clears the client session (no server round-trip that
+    // can 403 on an already-expired/deleted session).
+    await supabase.auth.signOut({ scope: "local" });
   }
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated: !!token, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ session, isAuthenticated: !!session, loading, login, register, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

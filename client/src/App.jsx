@@ -11,7 +11,8 @@ import AnimatedBackground from "./components/AnimatedBackground";
 import "./App.css";
 
 function RequireAuth({ children }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 

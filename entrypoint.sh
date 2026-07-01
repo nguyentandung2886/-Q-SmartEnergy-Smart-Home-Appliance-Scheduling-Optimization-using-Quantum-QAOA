@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
 
-# SQLite: the database file is created automatically on first run by
-# Base.metadata.create_all (see backend/main.py). No external DB to wait for.
-exec uvicorn main:app --host 0.0.0.0 --port 8000
+# Database is Supabase Postgres (external) — nothing to wait for locally.
+# Bind to the port the platform provides ($PORT on Render/Railway), else 8000.
+exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"

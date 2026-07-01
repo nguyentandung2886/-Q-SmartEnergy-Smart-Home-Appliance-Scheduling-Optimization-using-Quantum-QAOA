@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useCountUp } from "../useCountUp";
 import GanttEditor from "./GanttEditor";
 import { sendAlert } from "../api";
+import { supabase } from "../supabaseClient";
 import ExplainSection from "./ExplainSection";
 import BillChart from "./BillChart";
 import html2pdf from "html2pdf.js";
@@ -129,14 +130,11 @@ export default function ResultsPanel({
   };
 
   const handleExportPDF = async () => {
-    // Lấy thông tin user từ JWT Token
+    // Lấy email user từ phiên Supabase để hiển thị trên báo cáo
     let username = "Khách hàng";
     try {
-      const token = localStorage.getItem("token");
-      if (token) {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        username = payload.sub || "Khách hàng";
-      }
+      const { data } = await supabase.auth.getSession();
+      username = data.session?.user?.email || "Khách hàng";
     } catch (e) {}
 
     const element = document.getElementById("pdf-content-area");

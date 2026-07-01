@@ -4,7 +4,7 @@ import { useAuth } from "../AuthContext";
 import { motion } from "framer-motion";
 
 export default function Register() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,11 +16,10 @@ export default function Register() {
     setError("");
     setLoading(true);
     try {
-      await register(username, password);
+      await register(email, password);
       navigate("/dashboard");
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      setError(detail || "Đăng ký thất bại. Vui lòng thử lại.");
+      setError(err.message || "Đăng ký thất bại. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
@@ -38,8 +37,8 @@ export default function Register() {
         <h1>Tạo tài khoản</h1>
         {error && <p className="auth-error">{error}</p>}
         <label>
-          Tên đăng nhập
-          <input value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} autoFocus />
+          Email
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
         </label>
         <label>
           Mật khẩu (tối thiểu 8 ký tự)
