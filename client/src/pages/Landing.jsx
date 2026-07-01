@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Cpu, Zap, ShieldAlert, BarChart3, Activity, Globe, Lightbulb, TrendingDown, Star, ChevronDown, ChevronUp, CheckCircle, Mail, MapPin, Phone } from 'lucide-react';
+import { Cpu, Zap, ShieldAlert, BarChart3, Activity, Globe, Lightbulb, TrendingDown, Star, ChevronDown, ChevronUp, CheckCircle, Mail, MapPin, Phone } from '../components/icons';
 
 const fadeIn = {
   hidden: { opacity: 0, y: 30 },

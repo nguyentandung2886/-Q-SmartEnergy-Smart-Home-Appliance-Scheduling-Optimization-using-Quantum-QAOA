@@ -45,22 +45,14 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
       <td>
         <button
           onClick={toggleFlexible}
-          style={{
-            background: appliance.is_flexible ? "rgba(6, 182, 212, 0.1)" : "rgba(255, 255, 255, 0.05)",
-            cursor: "pointer", padding: "4px 8px",
-            borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600,
-            color: appliance.is_flexible ? "var(--quantum)" : "var(--text-muted)",
-            border: `1px solid ${appliance.is_flexible ? "var(--quantum)" : "rgba(255, 255, 255, 0.2)"}`,
-            boxShadow: appliance.is_flexible ? "0 0 10px rgba(6, 182, 212, 0.3)" : "none",
-            transition: "all 0.2s"
-          }}
+          className={"type-toggle" + (appliance.is_flexible ? " type-toggle--flex" : "")}
           title="Bấm để đổi loại"
         >
-          {appliance.is_flexible ? "⚡ Linh hoạt" : "🔒 Cố định"}
+          {appliance.is_flexible ? "Linh hoạt" : "Cố định"}
         </button>
       </td>
       <td>
-        <button onClick={() => onDelete(appliance.id)}>Xóa</button>
+        <button className="row-delete" onClick={() => onDelete(appliance.id)}>Xóa</button>
       </td>
     </tr>
   );
@@ -86,8 +78,11 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
   }
 
   return (
-    <div className="section-card glass-panel">
-      <h2>Thiết bị của bạn — tổng ~{totalKwh.toFixed(0)} kWh/tháng</h2>
+    <div className="card">
+      <div className="card-head">
+        <h3>Danh sách thiết bị</h3>
+        <span className="tag tag--green">~{totalKwh.toFixed(0)} kWh/tháng</span>
+      </div>
       <table>
         <thead>
           <tr>
@@ -110,7 +105,7 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
           onChange={(e) => setNewDuration(e.target.value)} required />
         <input type="number" placeholder="Số lượng" value={newQty} min={1} step={1}
           onChange={(e) => setNewQty(e.target.value)} required style={{ width: "80px" }} />
-        <button type="submit">+ Thêm thiết bị</button>
+        <button className="btn-ink" type="submit">Thêm thiết bị</button>
       </form>
     </div>
   );

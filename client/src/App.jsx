@@ -1,13 +1,16 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { ThemeProvider } from "./ThemeContext";
 import { AuthProvider, useAuth } from "./AuthContext";
 import ErrorBoundary from "./components/ErrorBoundary";
+import AppLayout from "./components/AppLayout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import Landing from "./pages/Landing";
-import AnimatedBackground from "./components/AnimatedBackground";
+import InsightsTab from "./pages/InsightsTab";
+import DevicesTab from "./pages/DevicesTab";
+import ForecastTab from "./pages/ForecastTab";
+import OptimizeTab from "./pages/OptimizeTab";
 import "./App.css";
 
 function RequireAuth({ children }) {
@@ -16,29 +19,31 @@ function RequireAuth({ children }) {
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
-function AnimatedRoutes() {
-  const location = useLocation();
-  return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-        <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AnimatePresence>
-  );
-}
-
 function App() {
   return (
     <ErrorBoundary>
-      <AnimatedBackground />
-      <AuthProvider>
-        <AnimatedRoutes />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+
+            <Route path="/app" element={<RequireAuth><AppLayout /></RequireAuth>}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<InsightsTab />} />
+              <Route path="devices" element={<DevicesTab />} />
+              <Route path="forecast" element={<ForecastTab />} />
+              <Route path="optimize" element={<OptimizeTab />} />
+            </Route>
+
+            {/* Back-compat: old single-page route → new app shell */}
+            <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
+            <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

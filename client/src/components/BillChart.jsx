@@ -54,12 +54,12 @@ export default function BillChart({ appliances, result, fixedHours }) {
   const COLORS = ['#06B6D4', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#EF4444', '#6B7280'];
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "2rem", marginTop: "2rem" }}>
+    <div className="bento" style={{ gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)" }}>
       {/* Area Chart for Hourly Load */}
-      <div className="section-card glass-panel" style={{ flex: "1 1 500px" }}>
-        <h3 style={{ marginTop: 0, marginBottom: "1rem", color: "var(--quantum)" }}>📉 Biểu đồ Tải điện (24h)</h3>
-        <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
-          Hiệu quả san phẳng đỉnh tải. Đường màu cam đại diện cho thói quen cũ (tập trung giờ cao điểm).
+      <div className="card">
+        <div className="card-head"><h3>Tải điện theo giờ (24h)</h3></div>
+        <p className="hint" style={{ marginTop: 0, marginBottom: "1rem" }}>
+          Hiệu quả san phẳng đỉnh tải. Đường cam là nếp dùng cũ (dồn vào buổi tối); đường teal là sau tối ưu.
         </p>
         <div style={{ height: 300, width: "100%" }}>
           <ResponsiveContainer>
@@ -74,12 +74,12 @@ export default function BillChart({ appliances, result, fixedHours }) {
                   <stop offset="95%" stopColor="#06B6D4" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <XAxis dataKey="hour" stroke="rgba(255,255,255,0.4)" fontSize={12} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={12} unit="kW" />
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: "rgba(20,24,40,0.9)", borderColor: "rgba(255,255,255,0.1)", borderRadius: "8px" }}
-                itemStyle={{ color: "#fff" }}
+              <XAxis dataKey="hour" stroke="#9b9b9b" fontSize={11} tickLine={false} />
+              <YAxis stroke="#9b9b9b" fontSize={11} unit="kW" width={44} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#9b9b9b" strokeOpacity={0.18} vertical={false} />
+              <Tooltip
+                contentStyle={{ background: "#171717", border: "none", borderRadius: "8px", fontSize: "12px" }}
+                itemStyle={{ color: "#fff" }} labelStyle={{ color: "#9b9b9b" }}
               />
               <Area type="monotone" dataKey="before" name="Trước tối ưu" stroke="#F59E0B" fillOpacity={1} fill="url(#colorBefore)" />
               <Area type="monotone" dataKey="after" name="Sau tối ưu" stroke="#06B6D4" fillOpacity={1} fill="url(#colorAfter)" />
@@ -90,9 +90,9 @@ export default function BillChart({ appliances, result, fixedHours }) {
       </div>
 
       {/* Pie Chart for Breakdown */}
-      <div className="section-card glass-panel" style={{ flex: "1 1 300px" }}>
-        <h3 style={{ marginTop: 0, marginBottom: "1rem", color: "var(--quantum)" }}>🥧 Tỷ trọng Tiêu thụ (Tháng)</h3>
-        <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+      <div className="card">
+        <div className="card-head"><h3>Tỷ trọng tiêu thụ (tháng)</h3></div>
+        <p className="hint" style={{ marginTop: 0, marginBottom: "1rem" }}>
           Thiết bị tiêu tốn nhiều điện năng nhất.
         </p>
         <div style={{ height: 400, width: "100%" }}>
