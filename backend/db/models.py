@@ -62,5 +62,8 @@ class ScheduleModel(Base):
     bill_before_vnd = Column(Float, nullable=False)
     bill_after_vnd = Column(Float, nullable=False)
     savings_percent = Column(Float, nullable=True)
+    # Fixed appliances' usage windows {name: [[start, length], ...]} — needed to fully
+    # rehydrate the schedule (and the Gantt's fixed-appliance hours) after a page reload.
+    fixed_windows_json = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="schedules")
