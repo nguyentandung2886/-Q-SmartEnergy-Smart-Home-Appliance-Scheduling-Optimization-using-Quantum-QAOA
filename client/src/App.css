@@ -597,3 +597,44 @@ td button:hover { color: #f87171; text-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
   .gantt-label { width: 100px; min-width: 100px; font-size: 0.75rem; }
   .gantt-track { min-width: 600px; }
 }
+
+/* --- PDF Export Mode --- */
+body.pdf-export-mode {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+.pdf-export-mode #pdf-content-area {
+  background: #ffffff !important;
+  color: #000000 !important;
+  padding: 20px !important;
+}
+.pdf-export-mode * {
+  color: #000000 !important;
+  text-shadow: none !important;
+}
+.pdf-export-mode .glass-panel {
+  background: #f9f9f9 !important;
+  border: 1px solid #ccc !important;
+  box-shadow: none !important;
+}
+.pdf-export-mode .recharts-text {
+  fill: #000000 !important;
+}
+.pdf-export-mode .recharts-cartesian-grid-horizontal line, 
+.pdf-export-mode .recharts-cartesian-grid-vertical line {
+  stroke: #ddd !important;
+}
+.pdf-export-mode .gantt-hour-cell {
+  border-right-color: #eee !important;
+}
+.pdf-export-mode .gantt-hour-label {
+  color: #000 !important;
+  border-bottom-color: #ddd !important;
+}
+.pdf-export-mode .bill-numbers .bill-item strong {
+  color: #000 !important;
+}
+.pdf-export-mode h2, .pdf-export-mode h3, .pdf-export-mode p {
+  color: #000 !important;
+}
+

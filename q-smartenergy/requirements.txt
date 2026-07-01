@@ -1,9 +1,0 @@
-qiskit
-qiskit-optimization
-qiskit-aer
-qiskit-algorithms
-numpy
-pandas
-matplotlib
-streamlit
-pytest

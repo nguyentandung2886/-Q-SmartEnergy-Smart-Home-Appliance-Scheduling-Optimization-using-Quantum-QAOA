@@ -21,7 +21,7 @@ flowchart LR
         FC[forecast]
         EXP[explain - SSE]
     end
-    subgraph Pipeline["q-smartenergy pipeline"]
+    subgraph Pipeline["backend/core pipeline"]
         QUBO[qubo_builder]
         QRUN[quantum_runner - QAOA/Aer]
         CALC[calc - EVN tiers]
@@ -51,16 +51,11 @@ summary from Gemini via Server-Sent Events.
 
 | Path | What it is |
 |------|------------|
-| [`q-smartenergy/`](q-smartenergy/) | Quantum + classical optimization pipeline (QUBO, QAOA, EVN pricing, ML duration forecaster). See [its README](q-smartenergy/README.md). |
-| [`server/`](server/) | FastAPI backend: JWT auth, appliance CRUD, `/optimize`, `/recompute-bill`, `/forecast`, `/explain` (SSE). SQLAlchemy + SQLite. |
+| [`backend/`](backend/) | FastAPI backend + Quantum optimization pipeline (QAOA, EVN pricing, ML). JWT auth, appliance CRUD, `/optimize`, `/recompute-bill`, `/forecast`, `/explain` (SSE). SQLAlchemy + SQLite. |
 | [`client/`](client/) | React + Vite dashboard: appliance editor, drag-and-drop Gantt scheduler, bill comparison, Gemini explanation. **This is the official user interface.** |
 
-> **Two UIs, one product.** The **React client** (`client/`) is the official
-> end-user interface, backed by the FastAPI server. The Streamlit app
-> (`q-smartenergy/app.py`) is kept as a lightweight **debug/admin tool** for
-> exercising the optimization pipeline directly (no auth, no database) — handy
-> for development and demos of the quantum engine in isolation, not the product
-> UI.
+> **One unified API.** The backend incorporates both the FastAPI web layer (`backend/api/`)
+> and the quantum optimization engine (`backend/core/`), simplifying dependencies and test runs.
 
 ## Quick Start (Docker)
 
@@ -84,11 +79,11 @@ gitignored; never commit real secrets.
 
 ## Local Development
 
-**Backend** (from `server/` — SQLite needs no external database):
+**Backend** (from `backend/` — SQLite needs no external database):
 
 ```bash
-pip install -r requirements.txt -r ../q-smartenergy/requirements.txt
-# server/.env holds JWT_SECRET (32+ chars) and GEMINI_API_KEY; DATABASE_URL
+pip install -r requirements.txt
+# backend/.env holds JWT_SECRET (32+ chars) and GEMINI_API_KEY; DATABASE_URL
 # defaults to a local SQLite file (sqlite:///./q_smartenergy.db).
 uvicorn main:app --reload --port 8000
 ```
@@ -102,14 +97,14 @@ npm run dev        # http://localhost:5173, proxying API to http://localhost:800
 
 ## Database Migrations (Alembic)
 
-The schema is versioned with Alembic (`server/alembic/`). For local dev and the
+The schema is versioned with Alembic (`backend/db/alembic/`). For local dev and the
 Docker demo the app calls `create_all` on startup, so the database just works
 out of the box. For a managed deployment, run migrations as a deploy step:
 
 ```bash
-cd server
+cd backend
 alembic upgrade head                       # apply migrations to DATABASE_URL
-alembic revision --autogenerate -m "msg"   # after changing server/models.py
+alembic revision --autogenerate -m "msg"   # after changing backend/db/models.py
 ```
 
 Alembic reads `DATABASE_URL` from the environment (same source as the app) and
@@ -120,8 +115,7 @@ once before generating new revisions.
 ## Tests
 
 ```bash
-cd server && pytest -q                # backend + integration (needs JWT_SECRET set)
-cd q-smartenergy && pytest tests/     # optimization pipeline
+cd backend && pytest -q               # backend + integration + optimization pipeline
 cd client && npm run build            # frontend build check
 ```
 
@@ -184,9 +178,8 @@ variables.
   optimum, so we can demonstrate QAOA actually *reaches* it — the approximation
   lives in the model, not in the solve.
 
-See [`q-smartenergy/qubo_builder.py`](q-smartenergy/qubo_builder.py) for the
-implementation and [`q-smartenergy/README.md`](q-smartenergy/README.md) for the
-economic framing.
+See [`backend/core/qubo_builder.py`](backend/core/qubo_builder.py) for the
+implementation.
 
 ## Notes
 

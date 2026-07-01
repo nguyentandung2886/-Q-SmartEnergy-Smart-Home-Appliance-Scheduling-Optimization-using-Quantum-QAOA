@@ -128,16 +128,48 @@ export default function ResultsPanel({
     setTimeout(() => setAlertStatus(null), 4000);
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    // Lấy thông tin user từ JWT Token
+    let username = "Khách hàng";
+    try {
+      const token = localStorage.getItem("token");
+      if (token) {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        username = payload.sub || "Khách hàng";
+      }
+    } catch (e) {}
+
     const element = document.getElementById("pdf-content-area");
+    
+    // Tạo header cho PDF
+    const header = document.createElement("div");
+    header.id = "pdf-temp-header";
+    header.innerHTML = `
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #000; margin-bottom: 5px; font-size: 24px;">BÁO CÁO TỐI ƯU HÓA NĂNG LƯỢNG</h1>
+        <p style="color: #333; margin-top: 0; font-size: 14px;"><strong>Khách hàng:</strong> ${username} | <strong>Ngày xuất báo cáo:</strong> ${new Date().toLocaleDateString('vi-VN')}</p>
+        <hr style="border-color: #ccc; margin-top: 15px;"/>
+      </div>
+    `;
+    element.insertBefore(header, element.firstChild);
+
+    // Kích hoạt chế độ in (để CSS xử lý màu sắc đen/trắng)
+    document.body.classList.add("pdf-export-mode");
+
     const opt = {
       margin:       10,
       filename:     'q-smartenergy-report.pdf',
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#050511' },
+      html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
-    html2pdf().set(opt).from(element).save();
+    
+    // Chờ html2pdf hoàn thành
+    await html2pdf().set(opt).from(element).save();
+
+    // Dọn dẹp DOM
+    document.body.classList.remove("pdf-export-mode");
+    element.removeChild(header);
   };
 
   // Tính toán ESG (Môi trường)
@@ -267,8 +299,18 @@ export default function ResultsPanel({
             <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>Tương đương trồng mới:</p>
             <p style={{ margin: "0.2rem 0", fontSize: "1.5rem", fontWeight: "bold", color: "#10B981" }}>🌲 {treesPlanted.toFixed(1)} <span style={{fontSize: "1rem"}}>cây xanh</span></p>
           </div>
+          </div>
         </div>
+
+      {/* Storytelling section (Insight & Lời khuyên) */}
+      <div style={{ marginTop: "1.5rem" }}>
+        <ExplainSection
+          explainText={explainText}
+          explainLoading={explainLoading}
+          onExplain={onExplain}
+        />
       </div>
+
       </div> {/* Đóng thẻ id="pdf-content-area" */}
 
       {/* Alert Center */}
@@ -307,12 +349,6 @@ export default function ResultsPanel({
         )}
       </div>
 
-      {/* Storytelling section */}
-      <ExplainSection
-        explainText={explainText}
-        explainLoading={explainLoading}
-        onExplain={onExplain}
-      />
 
       {/* QAOA hyperparameter analysis (III.3 — evidence of quantum tuning) */}
       <div style={{ marginTop: "1.5rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
