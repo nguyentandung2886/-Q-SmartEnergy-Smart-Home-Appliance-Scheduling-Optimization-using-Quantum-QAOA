@@ -5,11 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <title>Q-SmartEnergy</title>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        document.body.innerHTML += '<div style="color:red; background:white; position:fixed; top:0; left:0; z-index:9999; padding:20px; border:2px solid red;">' + msg + '<br/>' + (error && error.stack ? error.stack : '') + '</div>';
+      };
+      window.addEventListener("unhandledrejection", function(e) {
+        document.body.innerHTML += '<div style="color:red; background:white; position:fixed; top:200px; left:0; z-index:9999; padding:20px; border:2px solid red;">Unhandled Rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '<br/>' + (e.reason && e.reason.stack ? e.reason.stack : '') + '</div>';
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
