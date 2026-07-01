@@ -5,7 +5,7 @@
 
 ## **I. CHIẾN LƯỢC TỐI ƯU ĐIỂM SỐ \- VÒNG LÊN Ý TƯỞNG (100 ĐIỂM)**
 
-Mỗi bước đề xuất từ AI phải giải quyết trực tiếp các tiêu chí sau:
+Mỗi bước đề xuất từ AI phải giải quyết trực tiếp các tiêu chí sau đây:
 
 | Tiêu chí & Trọng số | Yêu cầu từ Ban Giám Khảo | Chỉ thị hành động cho AI (AI Actionable Directives) |
 | :---- | :---- | :---- |
