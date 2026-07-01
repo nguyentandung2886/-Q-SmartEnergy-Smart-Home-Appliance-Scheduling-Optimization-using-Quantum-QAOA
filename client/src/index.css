@@ -116,28 +116,37 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--text-muted);
 }
 
-.btn {
+/* Both are complete, standalone button styles (usable without a base class). */
+.btn, .btn-ink {
   font-family: var(--sans);
   font-size: 0.9rem;
   font-weight: 600;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--text-strong);
+  line-height: 1.2;
   border-radius: var(--radius-sm);
   padding: 0.6rem 1.1rem;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  transition: background 0.18s ease, border-color 0.18s ease, filter 0.18s ease, transform 0.1s ease;
 }
-.btn:hover { border-color: var(--text-muted); }
-.btn:active { transform: scale(0.98); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:active, .btn-ink:active { transform: scale(0.98); }
+.btn:disabled, .btn-ink:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+}
+.btn:hover { border-color: var(--text-muted); background: var(--surface-2); }
 
 .btn-ink {
   background: var(--ink);
   color: var(--ink-text);
   border: 1px solid var(--ink);
 }
-.btn-ink:hover { filter: brightness(1.12); border-color: var(--ink); }
+.btn-ink:hover { filter: brightness(1.12); }
 
 .tag {
   display: inline-block;
