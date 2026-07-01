@@ -65,7 +65,8 @@ class ScheduleOut(_ScheduleBase):
 
 
 class ScheduleHistoryOut(_ScheduleBase):
-    pass
+    # Empty for older rows saved before this column existed.
+    fixed_windows: Dict[str, List[List[int]]] = {}
 
 
 def _fig_to_base64(fig) -> str:
@@ -286,6 +287,7 @@ def optimize(
         bill_before_vnd=bill_before,
         bill_after_vnd=bill_after,
         savings_percent=savings_percent,
+        fixed_windows_json=fixed_windows,
     )
     db.add(row)
     db.commit()
@@ -420,6 +422,7 @@ def list_schedules(current_user: User = Depends(get_current_user), db: Session =
                 r.savings_percent if r.savings_percent is not None
                 else (r.bill_before_vnd - r.bill_after_vnd) / r.bill_before_vnd * 100 if r.bill_before_vnd > 0 else 0.0
             ),
+            fixed_windows=r.fixed_windows_json or {},
         )
         for r in rows
     ]

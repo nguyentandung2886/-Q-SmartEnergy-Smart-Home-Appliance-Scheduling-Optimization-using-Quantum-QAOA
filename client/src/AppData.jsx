@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  createAppliance, deleteAppliance, getAppliances,
+  createAppliance, deleteAppliance, getAppliances, getSchedules,
   optimize as apiOptimize, updateAppliance, explainSchedule, forecastDurations,
   qaoaAnalysis, recomputeBill,
 } from "./api";
@@ -41,7 +41,23 @@ export function AppDataProvider({ children }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => { loadAppliances(); }, []);
+  useEffect(() => { loadAppliances(); loadLatestSchedule(); }, []);
+
+  // Rehydrate the most recent optimization on entry so a page reload doesn't reset
+  // to a blank state (the schedule + bills + fixed windows are persisted server-side).
+  async function loadLatestSchedule() {
+    try {
+      const list = await getSchedules();
+      if (list && list.length) {
+        const s = list[0];
+        setDayOfMonth(s.day_of_month);
+        setWeather(s.weather_condition);
+        setResult({ ...s, _runId: `saved-${s.id}` });
+      }
+    } catch {
+      /* no history yet, or not authenticated — start fresh */
+    }
+  }
 
   // Expand backend usage windows into per-appliance ON-hour lists on a NEW optimization
   // (keyed on _runId so a bill recompute doesn't wipe the user's edits).
