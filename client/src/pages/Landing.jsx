@@ -123,10 +123,10 @@ export default function Landing() {
         </div>
         
         <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
-          <a href="#" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>Tính năng</a>
-          <a href="#" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>Cơ chế</a>
-          <a href="#" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>Đánh giá</a>
-          <a href="#" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>FAQ</a>
+          <a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features').scrollIntoView({ behavior: 'smooth', block: 'start' }); }} style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>Tính năng</a>
+          <a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works').scrollIntoView({ behavior: 'smooth', block: 'start' }); }} style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>Cơ chế</a>
+          <a href="#testimonials" onClick={(e) => { e.preventDefault(); document.getElementById('testimonials').scrollIntoView({ behavior: 'smooth', block: 'start' }); }} style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>Đánh giá</a>
+          <a href="#faq" onClick={(e) => { e.preventDefault(); document.getElementById('faq').scrollIntoView({ behavior: 'smooth', block: 'start' }); }} style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: '500', transition: 'color 0.2s' }} onMouseOver={(e) => e.target.style.color='#fff'} onMouseOut={(e) => e.target.style.color='var(--text-muted)'}>FAQ</a>
         </div>
         
         <div>
@@ -244,7 +244,7 @@ export default function Landing() {
       </section>
 
       {/* 2. PROBLEM VS SOLUTION (Split Screen & Peak Shaving Animation) */}
-      <section className="landing-section" style={{ padding: '6rem 2rem', background: 'rgba(255,255,255,0.02)' }}>
+      <section id="features" className="landing-section" style={{ padding: '6rem 2rem', background: 'rgba(255,255,255,0.02)', scrollMarginTop: '80px' }}>
         <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }} variants={fadeIn} style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
             <h2 style={{ fontSize: '3rem', marginBottom: '1rem', color: '#fff' }}>Đột phá Giới hạn</h2>
@@ -308,7 +308,7 @@ export default function Landing() {
       </section>
 
       {/* 3. HOW IT WORKS TIMELINE */}
-      <section className="landing-section" style={{ padding: '6rem 2rem' }}>
+      <section id="how-it-works" className="landing-section" style={{ padding: '6rem 2rem', scrollMarginTop: '80px' }}>
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
           <motion.h2 
             initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
@@ -350,7 +350,7 @@ export default function Landing() {
       </section>
 
       {/* 4. SOCIAL PROOF (Testimonials) */}
-      <section className="landing-section" style={{ padding: '6rem 2rem', background: 'rgba(139, 92, 246, 0.03)' }}>
+      <section id="testimonials" className="landing-section" style={{ padding: '6rem 2rem', background: 'rgba(139, 92, 246, 0.03)', scrollMarginTop: '80px' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <motion.h2 
             initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
@@ -396,7 +396,7 @@ export default function Landing() {
       </section>
 
       {/* 5. FAQ ACCORDION */}
-      <section className="landing-section" style={{ padding: '6rem 2rem' }}>
+      <section id="faq" className="landing-section" style={{ padding: '6rem 2rem', scrollMarginTop: '80px' }}>
         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
           <motion.h2 
             initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
