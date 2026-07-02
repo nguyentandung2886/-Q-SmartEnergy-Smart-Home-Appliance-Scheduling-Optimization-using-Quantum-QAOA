@@ -11,6 +11,7 @@ const TABS = [
   { to: "/app/optimize", label: "Tối ưu hóa" },
   { to: "/app/guide", label: "Hướng dẫn" },
   { to: "/app/feedback", label: "Góp ý" },
+  { to: "/app/profile", label: "Hồ sơ" },
 ];
 
 export default function AppLayout() {

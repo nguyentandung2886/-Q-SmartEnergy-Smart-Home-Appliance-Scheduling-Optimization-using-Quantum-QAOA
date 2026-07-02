@@ -84,6 +84,21 @@ export async function sendAlert(params) {
   return data;
 }
 
+export async function getMe() {
+  const { data } = await apiClient.get("/auth/me");
+  return data;
+}
+
+export async function updateUsername(username) {
+  const { data } = await apiClient.put("/auth/me", { username });
+  return data;
+}
+
+export async function getMyFeedback() {
+  const { data } = await apiClient.get("/feedback/me");
+  return data;
+}
+
 export async function submitFeedback(payload) {
   const { data } = await apiClient.post("/feedback", payload);
   return data;
@@ -91,6 +106,12 @@ export async function submitFeedback(payload) {
 
 export async function getFeedback() {
   const { data } = await apiClient.get("/feedback");
+  return data;
+}
+
+// Public testimonials for the landing page (no auth required).
+export async function getPublicFeedback() {
+  const { data } = await apiClient.get("/feedback/public");
   return data;
 }
 

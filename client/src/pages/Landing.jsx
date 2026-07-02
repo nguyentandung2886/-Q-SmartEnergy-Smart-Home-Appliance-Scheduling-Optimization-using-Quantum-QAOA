@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Cpu, Zap, ShieldAlert, BarChart3, Activity, Globe, Lightbulb, TrendingDown, Star, ChevronDown, ChevronUp, CheckCircle, Mail, MapPin, Phone } from '../components/icons';
+import { getPublicFeedback } from '../api';
 
 const fadeIn = {
   hidden: { opacity: 0, y: 30 },
@@ -69,7 +70,25 @@ export default function Landing() {
   
   const [displaySavings, setDisplaySavings] = useState(0);
   const [activeFaq, setActiveFaq] = useState(null);
-  
+
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    getPublicFeedback()
+      .then((data) => { if (active) setReviews(data); })
+      .catch(() => { if (active) setReviews([]); })
+      .finally(() => { if (active) setReviewsLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const formatReviewDate = (iso) => {
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  };
+
   useEffect(() => {
     let start = displaySavings;
     let end = estimatedSavings;
@@ -359,39 +378,47 @@ export default function Landing() {
             Khách hàng Đánh giá
           </motion.h2>
           
+          {reviewsLoading ? (
+            <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '1.05rem' }}>Đang tải đánh giá…</p>
+          ) : reviews.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '1.05rem' }}>
+              Chưa có đánh giá nào. Hãy là người đầu tiên chia sẻ trải nghiệm của bạn!
+            </p>
+          ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
-            {[
-              { name: "Anh Hoàng Tuấn", role: "Quản lý Tòa nhà", text: "Từ khi áp dụng Q-SmartEnergy, hóa đơn điện khu căn hộ giảm rõ rệt 18%. Thuật toán tự động sắp xếp giờ bơm nước và sưởi ấm cực kỳ thông minh." },
-              { name: "Anh Trịnh Bình", role: "Chủ hộ Gia đình", text: "Giao diện rất tương lai và đẹp mắt. Tôi không rành công nghệ nhưng chỉ cần nhập thiết bị và bấm tối ưu là hệ thống tự lo phần còn lại." },
-              { name: "Anh Hoàng Phan", role: "Chuyên gia Năng lượng", text: "Việc đưa QAOA vào bài toán Peak Shaving thực sự là một bước đột phá. Biểu đồ tiêu thụ phẳng hơn hẳn, giảm thiểu áp lực cho lưới điện quốc gia." }
-            ].map((review, i) => (
-              <motion.div 
-                key={i} 
+            {reviews.map((review, i) => (
+              <motion.div
+                key={i}
                 initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.2, duration: 0.5 }}
-                className="glass-panel" 
+                className="glass-panel"
                 style={{ padding: '2rem' }}
               >
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '1rem' }}>
-                  {[...Array(5)].map((_, j) => <Star key={j} size={16} color="#fbbf24" fill="#fbbf24" />)}
+                  {[...Array(5)].map((_, j) => (
+                    j < review.rating
+                      ? <Star key={j} size={16} color="#fbbf24" fill="#fbbf24" />
+                      : <Star key={j} size={16} color="#475569" fill="none" />
+                  ))}
                 </div>
                 <p style={{ color: '#cbd5e1', fontSize: '1.05rem', lineHeight: '1.6', marginBottom: '1.5rem', fontStyle: 'italic' }}>
-                  "{review.text}"
+                  "{review.message}"
                 </p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                   <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--quantum)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                    {review.name.charAt(0)}
+                    {review.customer_name.charAt(0)}
                   </div>
                   <div>
-                    <div style={{ fontWeight: '600', color: '#fff' }}>{review.name}</div>
-                    <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{review.role}</div>
+                    <div style={{ fontWeight: '600', color: '#fff' }}>{review.customer_name}</div>
+                    <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{formatReviewDate(review.created_at)}</div>
                   </div>
                 </div>
               </motion.div>
             ))}
           </div>
+          )}
         </div>
       </section>
 
