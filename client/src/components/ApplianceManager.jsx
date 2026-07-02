@@ -2,31 +2,34 @@ import { useState } from "react";
 import { useAppData } from "../AppData";
 import { computeCandidateHours } from "../scheduleUtils";
 
-function ApplianceRow({ appliance, onSave, onDelete }) {
+// Read-only summary of the allowed run window for a self-scheduling appliance,
+// reconstructed from its candidate (valid start) hours + how long it must run.
+function windowLabel(appliance) {
+  const ch = appliance.candidate_hours ?? [];
+  if (ch.length === 0) return "—";
+  const end = (ch[ch.length - 1] + appliance.duration_hours) % 24;
+  return `${ch[0]}h–${end}h`;
+}
+
+// "Linh hoạt · theo nhu cầu" (is_flexible === false): power / giờ dùng / số lượng.
+function FlexRow({ appliance, onSave, onDelete }) {
   const [power, setPower] = useState(appliance.power_w);
   const [duration, setDuration] = useState(appliance.duration_hours);
   const [quantity, setQuantity] = useState(appliance.quantity ?? 1);
-
-  function save(overrides = {}) {
-    onSave(appliance.id, {
-      ...appliance,
-      power_w: Number(power),
-      duration_hours: Number(duration),
-      quantity: Number(quantity),
-      ...overrides,
-    });
-  }
 
   function handleBlur() {
     const changed =
       Number(power) !== appliance.power_w ||
       Number(duration) !== appliance.duration_hours ||
       Number(quantity) !== (appliance.quantity ?? 1);
-    if (changed) save();
-  }
-
-  function toggleFlexible() {
-    save({ is_flexible: !appliance.is_flexible });
+    if (changed) {
+      onSave(appliance.id, {
+        ...appliance,
+        power_w: Number(power),
+        duration_hours: Number(duration),
+        quantity: Number(quantity),
+      });
+    }
   }
 
   return (
@@ -45,13 +48,43 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
           onChange={(e) => setQuantity(e.target.value)} onBlur={handleBlur} />
       </td>
       <td>
-        <button
-          onClick={toggleFlexible}
-          className={"type-toggle" + (appliance.is_flexible ? " type-toggle--flex" : "")}
-          title="Bấm để đổi loại"
-        >
-          {appliance.is_flexible ? "Cố định · tự lên lịch" : "Linh hoạt · theo nhu cầu"}
-        </button>
+        <button className="row-delete" onClick={() => onDelete(appliance.id)}>Xóa</button>
+      </td>
+    </tr>
+  );
+}
+
+// "Cố định · tự lên lịch" (is_flexible === true): power / số lượng editable; the
+// allowed window + required hours are read-only (change by re-adding the device).
+function FixedRow({ appliance, onSave, onDelete }) {
+  const [power, setPower] = useState(appliance.power_w);
+  const [quantity, setQuantity] = useState(appliance.quantity ?? 1);
+
+  function handleBlur() {
+    const changed =
+      Number(power) !== appliance.power_w ||
+      Number(quantity) !== (appliance.quantity ?? 1);
+    if (changed) {
+      onSave(appliance.id, {
+        ...appliance,
+        power_w: Number(power),
+        quantity: Number(quantity),
+      });
+    }
+  }
+
+  return (
+    <tr>
+      <td>{appliance.name}</td>
+      <td>
+        <input type="number" value={power} min={1}
+          onChange={(e) => setPower(e.target.value)} onBlur={handleBlur} />
+      </td>
+      <td>{windowLabel(appliance)}</td>
+      <td>{appliance.duration_hours}h</td>
+      <td>
+        <input type="number" value={quantity} min={1} step={1}
+          onChange={(e) => setQuantity(e.target.value)} onBlur={handleBlur} />
       </td>
       <td>
         <button className="row-delete" onClick={() => onDelete(appliance.id)}>Xóa</button>
@@ -61,8 +94,10 @@ function ApplianceRow({ appliance, onSave, onDelete }) {
 }
 
 /**
- * Appliance list: editable rows (power/duration/quantity/type) plus the add
- * form for a new fixed appliance. Add-form input state is local to this card.
+ * Appliance list: the type switch at the bottom picks which kind of device is
+ * shown (and which add form is active). Each type shows only its own columns —
+ * flexible loads (power/duration/quantity) vs. self-scheduling loads
+ * (power/allowed window/required hours/quantity).
  */
 export default function ApplianceManager({ appliances, totalKwh, onSave, onDelete, onAdd }) {
   const { runOptimize } = useAppData();
@@ -71,14 +106,17 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
   const [newDuration, setNewDuration] = useState(1);
   const [newQty, setNewQty] = useState(1);
 
-  // "flex" = tải theo nhu cầu (form cũ). "fixed" = tải tự lên lịch: khai báo khung
-  // giờ được phép chạy + số giờ cần chạy, hệ thống tính candidate_hours cho QAOA.
+  // "flex" = tải theo nhu cầu (is_flexible false). "fixed" = tải tự lên lịch
+  // (is_flexible true): khai báo khung giờ được phép chạy + số giờ cần chạy,
+  // hệ thống tính candidate_hours cho QAOA.
   const [mode, setMode] = useState("flex");
   const [useStart, setUseStart] = useState(22);
   const [useEnd, setUseEnd] = useState(6);
   const [needDuration, setNeedDuration] = useState(4);
   const [fixedError, setFixedError] = useState("");
   const [addedHint, setAddedHint] = useState(false);
+
+  const shown = appliances.filter((a) => (mode === "fixed" ? a.is_flexible : !a.is_flexible));
 
   function switchMode(next) {
     setMode(next);
@@ -121,15 +159,33 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
       </div>
       <table>
         <thead>
-          <tr>
-            <th>Tên thiết bị</th><th>Công suất (W)</th>
-            <th>Giờ dùng</th><th>Số lượng</th><th>Loại</th><th></th>
-          </tr>
+          {mode === "flex" ? (
+            <tr>
+              <th>Tên thiết bị</th><th>Công suất (W)</th>
+              <th>Giờ dùng</th><th>Số lượng</th><th></th>
+            </tr>
+          ) : (
+            <tr>
+              <th>Tên thiết bị</th><th>Công suất (W)</th>
+              <th>Khung giờ chạy</th><th>Số giờ cần chạy</th><th>Số lượng</th><th></th>
+            </tr>
+          )}
         </thead>
         <tbody>
-          {appliances.map((a) => (
-            <ApplianceRow key={a.id} appliance={a} onSave={onSave} onDelete={onDelete} />
-          ))}
+          {shown.length === 0 ? (
+            <tr>
+              <td colSpan={mode === "flex" ? 5 : 6}
+                style={{ color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>
+                Chưa có thiết bị {mode === "flex" ? "linh hoạt" : "cố định"} nào.
+              </td>
+            </tr>
+          ) : (
+            shown.map((a) =>
+              mode === "flex"
+                ? <FlexRow key={a.id} appliance={a} onSave={onSave} onDelete={onDelete} />
+                : <FixedRow key={a.id} appliance={a} onSave={onSave} onDelete={onDelete} />
+            )
+          )}
         </tbody>
       </table>
       <div className="add-type-switch">
@@ -139,7 +195,7 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
         </button>
         <button type="button" onClick={() => switchMode("fixed")}
           className={"type-toggle" + (mode === "fixed" ? " type-toggle--flex" : "")}>
-          + Cố định · tự lên lịch
+          Cố định · tự lên lịch
         </button>
       </div>
 

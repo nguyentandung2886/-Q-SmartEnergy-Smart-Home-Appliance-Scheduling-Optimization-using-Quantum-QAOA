@@ -232,7 +232,27 @@ td input { width: 92px; }
 .auth-form a { font-weight: 500; }
 
 /* ── Landing (minimalist) ───────────────────────────────── */
-.landing-page { min-height: 100vh; }
+/* Landing is a dark-themed marketing page (neon/glassmorphism on a near-black
+   canvas). Pin the dark palette here so it renders correctly even when the
+   global theme is light — otherwise theme-driven text (--text-strong etc.)
+   stays dark and blends into the dark background. */
+.landing-page {
+  min-height: 100vh;
+  background: #050511;
+  color: var(--text);
+
+  --surface: #171717;
+  --surface-2: #1c1c1c;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #ededed;
+  --text-strong: #ffffff;
+  --text-muted: #9b9b9b;
+  --accent: #2dd4bf;
+  --quantum: #2dd4bf;
+  --energy: #8fca93;
+  --glass-border: rgba(255, 255, 255, 0.10);
+}
 .hero-section { padding: 7rem 2rem 4rem; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .landing-title { font-family: var(--serif); font-size: clamp(2.6rem, 6vw, 4.2rem); font-weight: 600; letter-spacing: -0.03em; color: var(--text-strong); margin-bottom: 1.25rem; max-width: 16ch; }
 .landing-subtitle { font-size: 1.15rem; color: var(--text-muted); max-width: 60ch; margin-bottom: 2.5rem; }
