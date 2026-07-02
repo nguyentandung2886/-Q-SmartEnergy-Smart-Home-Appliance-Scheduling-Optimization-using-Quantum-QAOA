@@ -9,6 +9,7 @@ Schema:
   schedules   — id, user_id FK, created_at, day_of_month, weather_condition,
                 solver_used, used_fallback, energy, schedule_json (JSON string),
                 monthly_kwh (snapshot), bill_before_vnd (snapshot), bill_after_vnd (snapshot)
+  feedback    — id, user_id FK, rating (1-5), message, created_at
 """
 from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -28,6 +29,7 @@ class User(Base):
 
     appliances = relationship("ApplianceModel", back_populates="user", cascade="all, delete-orphan")
     schedules = relationship("ScheduleModel", back_populates="user", cascade="all, delete-orphan")
+    feedback = relationship("FeedbackModel", back_populates="user", cascade="all, delete-orphan")
 
 
 class ApplianceModel(Base):
@@ -67,3 +69,15 @@ class ScheduleModel(Base):
     fixed_windows_json = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="schedules")
+
+
+class FeedbackModel(Base):
+    __tablename__ = "feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rating = Column(Integer, nullable=False)  # 1-5 stars
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="feedback")

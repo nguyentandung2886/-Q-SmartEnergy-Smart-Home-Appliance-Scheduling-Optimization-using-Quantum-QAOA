@@ -11,6 +11,8 @@ import InsightsTab from "./pages/InsightsTab";
 import DevicesTab from "./pages/DevicesTab";
 import ForecastTab from "./pages/ForecastTab";
 import OptimizeTab from "./pages/OptimizeTab";
+import FeedbackTab from "./pages/FeedbackTab";
+import GuideTab from "./pages/GuideTab";
 import "./App.css";
 
 function RequireAuth({ children }) {
@@ -35,6 +37,8 @@ function App() {
               <Route path="devices" element={<DevicesTab />} />
               <Route path="forecast" element={<ForecastTab />} />
               <Route path="optimize" element={<OptimizeTab />} />
+              <Route path="guide" element={<GuideTab />} />
+              <Route path="feedback" element={<FeedbackTab />} />
             </Route>
 
             {/* Back-compat: old single-page route → new app shell */}

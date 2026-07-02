@@ -2,12 +2,15 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { AppDataProvider } from "../AppData";
 import { useAuth } from "../AuthContext";
 import ThemeToggle from "./ThemeToggle";
+import NotificationCenter from "./NotificationCenter";
 
 const TABS = [
   { to: "/app/dashboard", label: "Tổng quan" },
   { to: "/app/devices", label: "Thiết bị" },
   { to: "/app/forecast", label: "Dự báo" },
   { to: "/app/optimize", label: "Tối ưu hóa" },
+  { to: "/app/guide", label: "Hướng dẫn" },
+  { to: "/app/feedback", label: "Góp ý" },
 ];
 
 export default function AppLayout() {
@@ -42,6 +45,7 @@ export default function AppLayout() {
             </nav>
 
             <div className="navbar-actions">
+              <NotificationCenter />
               <ThemeToggle />
               <button className="btn nav-ghost" onClick={() => navigate("/history")}>Lịch sử</button>
               <button className="btn nav-ghost" onClick={handleLogout}>Đăng xuất</button>

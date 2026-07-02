@@ -5,6 +5,8 @@ import GanttEditor from "../components/GanttEditor";
 import ExplainSection from "../components/ExplainSection";
 
 const SAFE_POWER_W = 5000;
+const WEATHER_ICON = { sunny: "☀️", cloudy: "⛅", rainy: "🌧️" };
+const badgeStyle = { fontSize: "0.9rem", padding: "0.5rem 0.9rem", textTransform: "none", letterSpacing: 0 };
 
 function peakPower(schedule, fixedHours, appliances) {
   const watts = Array(24).fill(0);
@@ -27,14 +29,22 @@ function peakPower(schedule, fixedHours, appliances) {
 
 export default function OptimizeTab() {
   const {
-    dayOfMonth, setDayOfMonth, weather, setWeather, loading, error, runOptimize,
+    weather, weatherLoading, loading, error, runOptimize,
     result, reoptimizing, fixedHours, appliances, handlePinnedChange, handleFixedHoursChange,
     analysis, analyzing, handleAnalyze, explainText, explainLoading, handleExplain,
+    todayISO, tomorrowISO, maxDateISO, selectedDate, changeDate, forecastAvailable,
   } = useAppData();
 
   const peak = result ? peakPower(result.schedule, fixedHours, appliances) : null;
   const overload = peak && peak.peakW > SAFE_POWER_W;
   const fmt = (n) => Math.round(n).toLocaleString("vi-VN");
+
+  const ddmm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const isToday = selectedDate === todayISO;
+  const isTomorrow = selectedDate === tomorrowISO;
+  const isFuture = selectedDate > todayISO;
+  const showAssumedSunny = isFuture && !forecastAvailable;
+  const weatherLabel = WEATHER_OPTIONS.find((o) => o.value === weather)?.label ?? weather;
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
@@ -42,34 +52,53 @@ export default function OptimizeTab() {
         <p className="eyebrow">Bước 3</p>
         <h1>Tối ưu hóa lịch chạy</h1>
         <p className="page-sub">
-          Chọn ngày trong tháng và thời tiết, thuật toán QAOA sẽ xếp các tải linh hoạt vào khung
-          giờ có nắng để tối đa tự tiêu thụ điện mặt trời và giảm hóa đơn theo biểu giá bậc thang.
+          Chọn ngày tối ưu (hôm nay, ngày mai hoặc trong 5 ngày tới); thời tiết được lấy tự động theo
+          dự báo cho ngày đó và vị trí của bạn. Thuật toán QAOA xếp các tải linh hoạt vào khung giờ có
+          nắng để tối đa tự tiêu thụ điện mặt trời và giảm hóa đơn theo biểu giá bậc thang.
         </p>
       </div>
 
       <div className="card">
         <div className="controls">
-          <label className="field">
-            <span>Ngày trong tháng</span>
-            <input type="number" min={1} max={30} value={dayOfMonth}
-              onChange={(e) => setDayOfMonth(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Thời tiết hôm nay</span>
-            <select value={weather} onChange={(e) => setWeather(e.target.value)}>
-              {WEATHER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </label>
+          <div className="field">
+            <span>Ngày tối ưu</span>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+              <button className={isToday ? "btn-ink" : "btn"} onClick={() => changeDate(todayISO)}>Hôm nay</button>
+              <button className={isTomorrow ? "btn-ink" : "btn"} onClick={() => changeDate(tomorrowISO)}>Ngày mai</button>
+              <input
+                type="date"
+                value={selectedDate}
+                min={todayISO}
+                max={maxDateISO}
+                onChange={(e) => e.target.value && changeDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <span>Thời tiết {isToday ? "hiện tại" : `ngày ${ddmm(selectedDate)}`}</span>
+            <span className="tag" style={badgeStyle}>
+              {weatherLoading ? "⏳ Đang lấy…" : `${WEATHER_ICON[weather] ?? "🌤️"} ${weatherLabel}`}
+            </span>
+          </div>
           <button className="btn-ink btn-lg" onClick={() => runOptimize()} disabled={loading}>
             {loading ? "Đang tối ưu…" : "Tối ưu hóa"}
           </button>
         </div>
+        {showAssumedSunny && (
+          <div className="safety" style={{ background: "var(--pale-yellow-bg)", color: "var(--pale-yellow-fg)", borderColor: "transparent" }}>
+            ⚠️ Chưa có dữ liệu thời tiết chính xác cho ngày {ddmm(selectedDate)} (quá xa so với dự báo).
+            Kết quả dùng giả định trời nắng và có thể sai lệch.
+          </div>
+        )}
         {error && <p className="form-error">{error}</p>}
       </div>
 
       <AnimatePresence>
         {result && (
           <motion.div className="card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+            <p className="hint" style={{ marginTop: 0 }}>
+              Lịch tối ưu cho ngày <strong>{result._forDate ? ddmm(result._forDate) : `số ${result.day_of_month} trong tháng`}</strong>
+            </p>
             <div className="bill-strip">
               <div className="bill-figure">
                 <span className="bill-num">{fmt(result.bill_before_vnd)}đ</span>

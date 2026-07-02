@@ -84,6 +84,16 @@ export async function sendAlert(params) {
   return data;
 }
 
+export async function submitFeedback(payload) {
+  const { data } = await apiClient.post("/feedback", payload);
+  return data;
+}
+
+export async function getFeedback() {
+  const { data } = await apiClient.get("/feedback");
+  return data;
+}
+
 // Returns raw fetch Response (not axios) — needed for SSE ReadableStream
 export async function explainSchedule(payload) {
   const { data } = await supabase.auth.getSession();
@@ -98,9 +108,11 @@ export async function explainSchedule(payload) {
   });
 }
 
-// Fetch live weather from backend
-export async function getLiveWeather(lat, lon) {
-  const { data } = await apiClient.post("/weather", { lat, lon });
+// Fetch weather from backend for a given day offset (0 = today, 1 = tomorrow, …).
+// Returns { condition, forecast_available }; forecast_available is false when the day is
+// beyond the free-tier forecast horizon (caller should warn instead of trusting "sunny").
+export async function getLiveWeather(lat, lon, daysAhead = 0) {
+  const { data } = await apiClient.post("/weather", { lat, lon, days_ahead: daysAhead });
   return data;
 }
 

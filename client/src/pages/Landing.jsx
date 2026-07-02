@@ -96,7 +96,7 @@ export default function Landing() {
   const faqs = [
     { q: "QAOA Lượng tử hoạt động như thế nào?", a: "Q-SmartEnergy sử dụng thuật toán Lượng tử (QAOA) để giải quyết bài toán Tổ hợp lập lịch. Hệ thống số hóa ngôi nhà của bạn thành mô hình QUBO, sau đó lượng tử hóa để tìm ra lịch biểu tối ưu nhất trong tích tắc, điều mà máy tính thường phải mất hàng năm." },
     { q: "Tôi có cần mua phần cứng lượng tử không?", a: "Hoàn toàn không. Thuật toán của chúng tôi chạy trên Cloud (Đám mây) và sử dụng hệ thống giả lập hoặc kết nối trực tiếp qua API tới các máy tính lượng tử thực tế của IBM. Bạn chỉ cần điện thoại hoặc laptop." },
-    { q: "Liệu thuật toán có tự tắt tủ lạnh của tôi không?", a: "Không. Bạn có toàn quyền thiết lập 'Khung giờ bắt buộc hoạt động' cho từng thiết bị. Hệ thống chỉ tối ưu hóa trong những khoảng thời gian linh hoạt (ví dụ: máy giặt, máy bơm, sạc xe điện)." },
+    { q: "Liệu thuật toán có tự tắt tủ lạnh của tôi không?", a: "Không. Bạn có toàn quyền thiết lập 'Khung giờ có thể chạy' cho từng thiết bị. Hệ thống chỉ tự lên lịch giờ chạy cho các thiết bị loại 'Cố định · tự lên lịch' (ví dụ: máy giặt, máy bơm, sạc xe điện)." },
     { q: "Tôi có thể tiết kiệm được bao nhiêu?", a: "Trung bình khách hàng của Q-SmartEnergy tiết kiệm được từ 10% đến 25% hóa đơn tiền điện hàng tháng nhờ việc dịch chuyển tải khỏi các khung giờ cao điểm có giá điện đắt đỏ." }
   ];
 
