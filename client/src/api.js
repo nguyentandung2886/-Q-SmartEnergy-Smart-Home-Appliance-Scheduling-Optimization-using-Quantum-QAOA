@@ -115,6 +115,34 @@ export async function getPublicFeedback() {
   return data;
 }
 
+// ── Admin (role="admin" only; backend enforces via get_current_admin) ──────────
+export async function getAdminStats() {
+  const { data } = await apiClient.get("/admin/stats");
+  return data;
+}
+
+export async function getAdminFeedback(rating) {
+  const { data } = await apiClient.get("/admin/feedback", {
+    params: rating ? { rating } : {},
+  });
+  return data;
+}
+
+export async function setFeedbackFeatured(id, isFeatured) {
+  const { data } = await apiClient.patch(`/admin/feedback/${id}`, { is_featured: isFeatured });
+  return data;
+}
+
+export async function getAdminUsers() {
+  const { data } = await apiClient.get("/admin/users");
+  return data;
+}
+
+export async function getAdminLogs({ limit = 50, offset = 0 } = {}) {
+  const { data } = await apiClient.get("/admin/logs", { params: { limit, offset } });
+  return data;
+}
+
 // Returns raw fetch Response (not axios) — needed for SSE ReadableStream
 export async function explainSchedule(payload) {
   const { data } = await supabase.auth.getSession();

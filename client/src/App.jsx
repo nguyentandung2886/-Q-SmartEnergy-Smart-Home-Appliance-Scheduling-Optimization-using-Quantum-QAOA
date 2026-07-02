@@ -1,8 +1,15 @@
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ThemeProvider } from "./ThemeContext";
 import { AuthProvider, useAuth } from "./AuthContext";
+import { getMe } from "./api";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AppLayout from "./components/AppLayout";
+import AdminLayout from "./components/AdminLayout";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminFeedback from "./pages/admin/AdminFeedback";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminLogs from "./pages/admin/AdminLogs";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import History from "./pages/History";
@@ -20,6 +27,50 @@ function RequireAuth({ children }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) return null;
   return isAuthenticated ? children : <Navigate to="/login" replace />;
+}
+
+// Gate for the admin area. Role is verified against the backend (GET /auth/me), the
+// trusted source of truth — the backend also enforces admin on every /admin/* endpoint.
+// Non-admins are redirected to the standard app.
+function RequireAdmin({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+  const [role, setRole] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    getMe()
+      .then((me) => setRole(me.role))
+      .catch(() => setFailed(true));
+  }, [isAuthenticated]);
+
+  if (loading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (failed) return <Navigate to="/app/dashboard" replace />;
+  if (!role) return null; // still resolving role
+  return role === "admin" ? children : <Navigate to="/app/dashboard" replace />;
+}
+
+// Post-login/registration landing. Role is fetched from the backend (GET /auth/me) —
+// the trusted source of truth — never from the client-controlled session metadata.
+function PostAuthRedirect() {
+  const { isAuthenticated, loading } = useAuth();
+  const [role, setRole] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    getMe()
+      .then((me) => setRole(me.role))
+      .catch(() => setFailed(true));
+  }, [isAuthenticated]);
+
+  if (loading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  // On failure, fall back to the standard app so users aren't stranded.
+  if (failed) return <Navigate to="/app/dashboard" replace />;
+  if (!role) return null; // still resolving role
+  return <Navigate to={role === "admin" ? "/admin/dashboard" : "/app/dashboard"} replace />;
 }
 
 function App() {
@@ -43,8 +94,18 @@ function App() {
               <Route path="profile" element={<ProfileTab />} />
             </Route>
 
-            {/* Back-compat: old single-page route → new app shell */}
-            <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
+            {/* Post-auth landing: routes by role (admin → /admin, others → /app). */}
+            <Route path="/dashboard" element={<RequireAuth><PostAuthRedirect /></RequireAuth>} />
+
+            {/* Admin area — role verified by RequireAdmin AND enforced on every backend route. */}
+            <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="feedback" element={<AdminFeedback />} />
+              <Route path="users" element={<AdminUsers />} />
+              <Route path="logs" element={<AdminLogs />} />
+            </Route>
+
             <Route path="/history" element={<RequireAuth><History /></RequireAuth>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

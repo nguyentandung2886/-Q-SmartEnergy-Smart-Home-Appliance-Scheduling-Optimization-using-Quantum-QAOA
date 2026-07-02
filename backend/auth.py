@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 
 from core import appliance_catalog
 from db.database import get_db
-from db.models import ApplianceModel, User
+from db.models import ApplianceModel, BusinessProfile, User
+
+_BUSINESS_TYPES = {"production", "commercial"}
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 if not SUPABASE_URL:
@@ -51,6 +53,45 @@ def _seed_default_appliances(db: Session, user: User) -> None:
         ))
 
 
+def _resolve_role(payload: dict) -> str:
+    """Decide a new user's role from the JWT claims.
+
+    SECURITY: `admin` is trusted only from `app_metadata`, which the public signup
+    flow cannot write — only the seed script (service-role key) can. Any `role` a
+    user places in `user_metadata` is user-controlled, so an `admin` value there is
+    ignored and forced down to `household`.
+    """
+    app_metadata = payload.get("app_metadata") or {}
+    if app_metadata.get("role") == "admin":
+        return "admin"
+
+    user_metadata = payload.get("user_metadata") or {}
+    if user_metadata.get("role") == "business":
+        return "business"
+    # Anything else — including a forged "admin" in user_metadata — is a household.
+    return "household"
+
+
+def _create_business_profile(db: Session, user: User, payload: dict) -> None:
+    meta = payload.get("user_metadata") or {}
+    business_type = meta.get("business_type")
+    if business_type not in _BUSINESS_TYPES:
+        business_type = "commercial"
+
+    contracted_power_kw = meta.get("contracted_power_kw")
+    try:
+        contracted_power_kw = float(contracted_power_kw) if contracted_power_kw is not None else None
+    except (TypeError, ValueError):
+        contracted_power_kw = None
+
+    db.add(BusinessProfile(
+        user_id=user.id,
+        business_type=business_type,
+        scale=meta.get("scale"),
+        contracted_power_kw=contracted_power_kw,
+    ))
+
+
 def get_current_user(
     token: str = Depends(_oauth2_scheme),
     db: Session = Depends(get_db),
@@ -78,12 +119,30 @@ def get_current_user(
 
     user = db.query(User).filter(User.supabase_uid == supabase_uid).first()
     if user is None:
-        # First time we see this Supabase user: create their local row and seed
-        # the default household appliances (previously done on /auth/register).
-        user = User(supabase_uid=supabase_uid, email=payload.get("email"))
+        # First time we see this Supabase user: create their local row. Role comes
+        # from the JWT claims (see _resolve_role — admin only via app_metadata).
+        role = _resolve_role(payload)
+        user = User(supabase_uid=supabase_uid, email=payload.get("email"), role=role)
         db.add(user)
-        db.flush()  # get user.id before seeding appliances
-        _seed_default_appliances(db, user)
+        db.flush()  # get user.id before seeding appliances / profile
+        if role == "business":
+            # Businesses declare their own machinery via the Devices tab — no
+            # default household appliances.
+            _create_business_profile(db, user, payload)
+        elif role == "household":
+            _seed_default_appliances(db, user)
+        # admin: no appliances, no business profile.
         db.commit()
         db.refresh(user)
     return user
+
+
+def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require the caller to be an admin. Layered on get_current_user so token
+    validation (and the test override) is reused; raises 403 for any other role."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return current_user

@@ -9,7 +9,7 @@ Schema:
   schedules   — id, user_id FK, created_at, day_of_month, weather_condition,
                 solver_used, used_fallback, energy, schedule_json (JSON string),
                 monthly_kwh (snapshot), bill_before_vnd (snapshot), bill_after_vnd (snapshot)
-  feedback    — id, user_id FK, rating (1-5), message, created_at
+  feedback    — id, user_id FK, rating (1-5), message, is_featured, created_at
 """
 from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -25,11 +25,30 @@ class User(Base):
     supabase_uid = Column(String(36), unique=True, nullable=False, index=True)
     email = Column(String(255), nullable=True)
     username = Column(String(50), nullable=True)
+    # "household" (default), "business", or "admin". Admin is granted only via the
+    # seed script (app_metadata), never through public signup — see auth.py.
+    role = Column(String(20), nullable=False, server_default="household", default="household")
     created_at = Column(DateTime, server_default=func.now())
 
     appliances = relationship("ApplianceModel", back_populates="user", cascade="all, delete-orphan")
     schedules = relationship("ScheduleModel", back_populates="user", cascade="all, delete-orphan")
     feedback = relationship("FeedbackModel", back_populates="user", cascade="all, delete-orphan")
+    business_profile = relationship(
+        "BusinessProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class BusinessProfile(Base):
+    __tablename__ = "business_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    business_type = Column(String(20), nullable=False)  # "production" | "commercial"
+    scale = Column(String(50), nullable=True)
+    contracted_power_kw = Column(Float, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="business_profile")
 
 
 class ApplianceModel(Base):
@@ -78,6 +97,9 @@ class FeedbackModel(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     rating = Column(Integer, nullable=False)  # 1-5 stars
     message = Column(Text, nullable=False)
+    # Admin-curated: only is_featured=True feedback is served on the public landing
+    # page (GET /feedback/public). Toggled via PATCH /admin/feedback/{id}.
+    is_featured = Column(Boolean, nullable=False, server_default="0", default=False)
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="feedback")

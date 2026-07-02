@@ -105,9 +105,11 @@ def create_feedback(
 
 @router.get("/public", response_model=List[PublicFeedbackOut])
 def list_public_feedback(db: Session = Depends(get_db)):
-    """Latest feedback for the public landing page. No auth; no user_id/email exposed."""
+    """Admin-curated feedback for the public landing page. No auth; no user_id/email
+    exposed. Only is_featured=True rows are shown (toggled via PATCH /admin/feedback)."""
     rows = (
         db.query(FeedbackModel)
+        .filter(FeedbackModel.is_featured.is_(True))
         .order_by(FeedbackModel.created_at.desc(), FeedbackModel.id.desc())
         .limit(9)
         .all()

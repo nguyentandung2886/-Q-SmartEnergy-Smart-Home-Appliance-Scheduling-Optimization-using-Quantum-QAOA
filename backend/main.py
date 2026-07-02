@@ -37,6 +37,7 @@ from api import explain_router
 from api import forecast_router
 from api import weather_router, alert_router
 from api import feedback_router
+from api import admin_router
 
 app.include_router(auth_router.router)
 app.include_router(appliances_router.router)
@@ -46,6 +47,7 @@ app.include_router(forecast_router.router)
 app.include_router(weather_router.router)
 app.include_router(alert_router.router)
 app.include_router(feedback_router.router)
+app.include_router(admin_router.router)
 
 
 @app.get("/")

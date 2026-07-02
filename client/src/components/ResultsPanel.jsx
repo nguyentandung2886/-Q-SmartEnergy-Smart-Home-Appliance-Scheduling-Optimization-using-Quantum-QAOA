@@ -8,9 +8,6 @@ import ExplainSection from "./ExplainSection";
 import BillChart from "./BillChart";
 import html2pdf from "html2pdf.js";
 
-// Ngưỡng công suất đồng thời an toàn của hộ gia đình (khớp power_threshold_w trong QUBO H_power).
-const SAFE_POWER_W = 5000;
-
 // Tính công suất đồng thời (W) từng giờ từ giờ chạy thật của mọi thiết bị: tải linh hoạt ở giờ
 // được tối ưu (1 khối liên tục theo thời lượng), tải cố định ở các giờ người dùng bật trên lưới
 // (fixedHours: {tên: [giờ...]}). Trả { peakW, peakHour, names } của giờ đỉnh.
@@ -88,9 +85,13 @@ export default function ResultsPanel({
   const [alertStatus, setAlertStatus] = useState(null);
   const [sendingAlert, setSendingAlert] = useState(false);
 
+  // Ngưỡng công suất đồng thời an toàn (W), theo role — backend trả về trong /optimize.
+  // Lịch sử lưu (rehydrate) không có trường này nên fallback về mặc định hộ gia đình 5000W.
+  const safePowerW = result.power_threshold_w ?? 5000;
+
   // Auto-explain on overload
   const peak = computePeakPower(result.schedule, fixedHours, appliances);
-  const overload = peak.peakW > SAFE_POWER_W;
+  const overload = peak.peakW > safePowerW;
 
   useEffect(() => {
     if (overload && !explainText && !explainLoading) {
@@ -269,8 +270,8 @@ export default function ResultsPanel({
             }}
           >
           {overload
-            ? `CẢNH BÁO CHÁY NỔ: ${peak.peakW.toLocaleString("vi-VN")}W cùng lúc lúc ${peak.peakHour}h (> ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W) — ${peak.names.join(", ")}`
-            : `An toàn công suất: cao nhất ${peak.peakW.toLocaleString("vi-VN")}W lúc ${peak.peakHour}h, dưới ngưỡng ${SAFE_POWER_W.toLocaleString("vi-VN")}W`}
+            ? `CẢNH BÁO CHÁY NỔ: ${peak.peakW.toLocaleString("vi-VN")}W cùng lúc lúc ${peak.peakHour}h (> ngưỡng ${safePowerW.toLocaleString("vi-VN")}W) — ${peak.names.join(", ")}`
+            : `An toàn công suất: cao nhất ${peak.peakW.toLocaleString("vi-VN")}W lúc ${peak.peakHour}h, dưới ngưỡng ${safePowerW.toLocaleString("vi-VN")}W`}
         </div>
 
 

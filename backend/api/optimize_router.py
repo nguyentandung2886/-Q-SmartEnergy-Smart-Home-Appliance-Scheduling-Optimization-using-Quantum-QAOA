@@ -29,6 +29,30 @@ from core.qubo_builder import Appliance
 
 router = APIRouter(tags=["optimize"])
 
+# Ngưỡng công suất đồng thời (W) mặc định cho hộ gia đình — khớp default power_threshold_w của
+# build_qubo (H_power) và banner an toàn ở frontend. Business dùng công suất hợp đồng đã khai báo.
+DEFAULT_POWER_THRESHOLD_W = 5000.0
+
+# Thương mại cảnh báo quá tải SỚM hơn sản xuất: với CÙNG công suất hợp đồng, ngưỡng thương mại chỉ
+# bằng 80% (sản xuất chịu tải máy móc nặng theo thiết kế; thương mại ưu tiên an toàn nên hạ ngưỡng).
+COMMERCIAL_SAFETY_MARGIN = 0.8
+
+
+def _power_threshold_for_user(user: User) -> float:
+    """Ngưỡng công suất đồng thời (W) đưa vào H_power của QUBO cho user này.
+
+    - household / không có business_profile / chưa khai công suất hợp đồng: giữ mặc định 5000W.
+    - business + production: đúng công suất hợp đồng (kW -> W).
+    - business + commercial: công suất hợp đồng × COMMERCIAL_SAFETY_MARGIN (cảnh báo sớm hơn).
+    """
+    profile = getattr(user, "business_profile", None)
+    if user.role != "business" or profile is None or profile.contracted_power_kw is None:
+        return DEFAULT_POWER_THRESHOLD_W
+    contracted_w = profile.contracted_power_kw * 1000
+    if profile.business_type == "commercial":
+        return contracted_w * COMMERCIAL_SAFETY_MARGIN
+    return contracted_w
+
 
 class OptimizeRequest(BaseModel):
     day_of_month: int = Field(9, ge=1, le=30)
@@ -58,6 +82,9 @@ class _ScheduleBase(BaseModel):
 class ScheduleOut(_ScheduleBase):
     gantt_chart_png: str
     bill_chart_png: str
+    # Ngưỡng công suất đồng thời (W) đã dùng cho H_power của run này — frontend đọc đúng ngưỡng
+    # (theo role) thay vì hardcode. Không lưu DB nên lịch sử (ScheduleHistoryOut) không có trường này.
+    power_threshold_w: float
     # Fixed appliances' realistic daily usage windows for the Gantt: {name: [[start, length], ...]}.
     # Each appliance may run in SEVERAL disjoint windows (e.g. fan at noon + evening), not one block.
     # Flexible appliances aren't here — they live in `schedule` at their single optimized hour.
@@ -242,7 +269,8 @@ def optimize(
     flexible, _fixed = split_by_flexibility(user_appliances)
 
     profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
-    scheduler = QuantumScheduler(flexible, profile)
+    power_threshold_w = _power_threshold_for_user(current_user)
+    scheduler = QuantumScheduler(flexible, profile, power_threshold_w=power_threshold_w)
     result = scheduler.solve(use_quantum=payload.use_quantum)
 
     # Merge pinned entries back — QAOA only ran on remaining flexible appliances
@@ -300,7 +328,7 @@ def optimize(
         schedule=result.schedule, monthly_kwh=user_monthly_kwh,
         bill_before_vnd=bill_before, bill_after_vnd=bill_after,
         savings_percent=savings_percent, gantt_chart_png=gantt_png, bill_chart_png=bill_png,
-        fixed_windows=fixed_windows,
+        fixed_windows=fixed_windows, power_threshold_w=power_threshold_w,
     )
 
 

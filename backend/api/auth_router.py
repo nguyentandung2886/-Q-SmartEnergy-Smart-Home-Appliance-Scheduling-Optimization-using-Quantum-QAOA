@@ -16,6 +16,14 @@ from db.models import User
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+class BusinessProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    business_type: str
+    scale: str | None = None
+    contracted_power_kw: float | None = None
+
+
 class MeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,6 +31,8 @@ class MeResponse(BaseModel):
     supabase_uid: str
     email: str | None = None
     username: str | None = None
+    role: str
+    business_profile: BusinessProfileResponse | None = None
 
 
 class MeUpdate(BaseModel):

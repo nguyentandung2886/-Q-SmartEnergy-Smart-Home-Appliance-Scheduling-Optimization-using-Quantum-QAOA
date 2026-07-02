@@ -4,7 +4,6 @@ import { WEATHER_OPTIONS } from "../forecastConfig";
 import GanttEditor from "../components/GanttEditor";
 import ExplainSection from "../components/ExplainSection";
 
-const SAFE_POWER_W = 5000;
 const WEATHER_ICON = { sunny: "☀️", cloudy: "⛅", rainy: "🌧️" };
 const badgeStyle = { fontSize: "0.9rem", padding: "0.5rem 0.9rem", textTransform: "none", letterSpacing: 0 };
 
@@ -35,8 +34,11 @@ export default function OptimizeTab() {
     todayISO, tomorrowISO, maxDateISO, selectedDate, changeDate, forecastAvailable,
   } = useAppData();
 
+  // Ngưỡng công suất đồng thời an toàn (W), theo role — backend trả về trong /optimize.
+  // Lịch sử lưu (rehydrate) không có trường này nên fallback về mặc định hộ gia đình 5000W.
+  const safePowerW = result?.power_threshold_w ?? 5000;
   const peak = result ? peakPower(result.schedule, fixedHours, appliances) : null;
-  const overload = peak && peak.peakW > SAFE_POWER_W;
+  const overload = peak && peak.peakW > safePowerW;
   const fmt = (n) => Math.round(n).toLocaleString("vi-VN");
 
   const ddmm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
@@ -136,8 +138,8 @@ export default function OptimizeTab() {
             {peak && (
               <div className={"safety " + (overload ? "safety--bad" : "safety--ok")}>
                 {overload
-                  ? `Quá tải: ${fmt(peak.peakW)}W cùng lúc lúc ${peak.peakHour}h (> ${fmt(SAFE_POWER_W)}W) — ${peak.names.join(", ")}`
-                  : `An toàn công suất: cao nhất ${fmt(peak.peakW)}W lúc ${peak.peakHour}h, dưới ngưỡng ${fmt(SAFE_POWER_W)}W`}
+                  ? `Quá tải: ${fmt(peak.peakW)}W cùng lúc lúc ${peak.peakHour}h (> ${fmt(safePowerW)}W) — ${peak.names.join(", ")}`
+                  : `An toàn công suất: cao nhất ${fmt(peak.peakW)}W lúc ${peak.peakHour}h, dưới ngưỡng ${fmt(safePowerW)}W`}
               </div>
             )}
 

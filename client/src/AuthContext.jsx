@@ -23,8 +23,14 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }
 
-  async function register(email, password) {
-    const { error } = await supabase.auth.signUp({ email, password });
+  async function register(email, password, metadata) {
+    // `metadata` lands in the JWT's user_metadata. The backend treats it as
+    // user-controlled: a "business" role is honored, but "admin" is ignored.
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      ...(metadata ? { options: { data: metadata } } : {}),
+    });
     if (error) throw error;
   }
 
