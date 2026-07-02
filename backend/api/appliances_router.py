@@ -2,7 +2,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -19,6 +19,16 @@ class ApplianceIn(BaseModel):
     quantity: int = Field(1, ge=1)
     candidate_hours: List[int] = []
     is_flexible: bool = True
+
+    @field_validator("candidate_hours")
+    @classmethod
+    def _candidate_hours_in_day_range(cls, v: List[int]) -> List[int]:
+        """Mỗi giờ ứng viên phải trong 0-23 — giờ ngoài khoảng làm /optimize trả 500 (build_qubo
+        không tra được giá tại giờ đó) thay vì lỗi validate rõ ràng (bug #7)."""
+        for h in v:
+            if not (0 <= h <= 23):
+                raise ValueError(f"candidate_hours chứa giờ ngoài 0-23: {h}")
+        return v
 
 
 class ApplianceOut(BaseModel):

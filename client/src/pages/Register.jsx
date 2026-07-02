@@ -14,17 +14,43 @@ const fieldStyle = {
 
 const radioRowStyle = { flexDirection: "row", alignItems: "center", gap: "0.5rem", fontWeight: 400 };
 
+// Cấp điện áp đấu nối theo biểu giá EVN doanh nghiệp (backend/core/business_calc.py).
+// Sản xuất có 4 cấp; kinh doanh (nhóm 3.3) chỉ có 3 — không có cấp >= 110 kV.
+const VOLTAGE_OPTIONS = {
+  production: [
+    { value: "duoi_6kv", label: "Dưới 6 kV (phổ biến nhất)" },
+    { value: "6_den_22kv", label: "Từ 6 kV đến dưới 22 kV" },
+    { value: "22_den_110kv", label: "Từ 22 kV đến dưới 110 kV" },
+    { value: "tren_110kv", label: "Từ 110 kV trở lên" },
+  ],
+  commercial: [
+    { value: "duoi_6kv", label: "Dưới 6 kV (phổ biến nhất)" },
+    { value: "6_den_22kv", label: "Từ 6 kV đến dưới 22 kV" },
+    { value: "22_den_110kv", label: "Từ 22 kV trở lên" },
+  ],
+};
+
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accountType, setAccountType] = useState("household");
   const [businessType, setBusinessType] = useState("production");
+  const [voltageLevel, setVoltageLevel] = useState("duoi_6kv");
   const [scale, setScale] = useState("Nhỏ");
   const [contractedPower, setContractedPower] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
+
+  function selectBusinessType(type) {
+    setBusinessType(type);
+    // Kinh doanh không có cấp >= 110 kV: nếu cấp đang chọn không tồn tại ở loại hình
+    // mới thì quay về mặc định "Dưới 6 kV".
+    if (!VOLTAGE_OPTIONS[type].some((o) => o.value === voltageLevel)) {
+      setVoltageLevel("duoi_6kv");
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -36,6 +62,7 @@ export default function Register() {
           ? {
               role: "business",
               business_type: businessType,
+              voltage_level: voltageLevel,
               scale,
               contracted_power_kw: Number(contractedPower),
             }
@@ -103,7 +130,7 @@ export default function Register() {
                   name="businessType"
                   value="production"
                   checked={businessType === "production"}
-                  onChange={() => setBusinessType("production")}
+                  onChange={() => selectBusinessType("production")}
                 />
                 Sản xuất
               </label>
@@ -113,11 +140,26 @@ export default function Register() {
                   name="businessType"
                   value="commercial"
                   checked={businessType === "commercial"}
-                  onChange={() => setBusinessType("commercial")}
+                  onChange={() => selectBusinessType("commercial")}
                 />
                 Thương mại
               </label>
             </div>
+            <label>
+              Cấp điện áp đấu nối
+              <select
+                value={voltageLevel}
+                onChange={(e) => setVoltageLevel(e.target.value)}
+                style={fieldStyle}
+                required
+              >
+                {VOLTAGE_OPTIONS[businessType].map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label>
               Quy mô
               <select value={scale} onChange={(e) => setScale(e.target.value)} style={fieldStyle}>

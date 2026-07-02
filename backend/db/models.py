@@ -46,6 +46,10 @@ class BusinessProfile(Base):
     business_type = Column(String(20), nullable=False)  # "production" | "commercial"
     scale = Column(String(50), nullable=True)
     contracted_power_kw = Column(Float, nullable=True)
+    # Cấp điện áp đấu nối — key trong business_calc.EVN_BUSINESS_TIERS ("tren_110kv",
+    # "22_den_110kv", "6_den_22kv", "duoi_6kv"). Nullable: tài khoản tạo trước khi có
+    # field này — billing fallback về "duoi_6kv" (phổ biến nhất).
+    voltage_level = Column(String(20), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="business_profile")

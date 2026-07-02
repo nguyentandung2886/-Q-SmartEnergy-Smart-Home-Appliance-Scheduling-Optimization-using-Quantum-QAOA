@@ -85,6 +85,12 @@ class Appliance:
         return self.power_w / 1000.0 * self.duration_hours
 
 
+# Ngưỡng công suất đồng thời (W) mặc định cho H_power khi caller không truyền power_threshold_w.
+# ĐỊNH NGHĨA DUY NHẤT của giá trị này: quantum_runner.QuantumScheduler và api.optimize_router
+# import lại hằng số này thay vì lặp literal 5000.0 (tránh 3 nơi lệch nhau — bug #6).
+DEFAULT_POWER_THRESHOLD_W: float = 5000.0
+
+
 # Scenario PoC mặc định (4 biến = 2 thiết bị × 2 giờ ứng viên → "4-5 qubit").
 # Định nghĩa module-level để Task 4/5 import lại, không hard-code rời.
 DEFAULT_APPLIANCES: List[Appliance] = [
@@ -105,7 +111,7 @@ def _lookup(daily_profile: pd.DataFrame, hour: int, column: str) -> float:
 def build_qubo(
     appliances: List[Appliance],
     daily_profile: pd.DataFrame,   # output của data_prep.build_daily_profile(): cột hour, solar_kwh, price_per_kwh
-    power_threshold_w: float = 5000.0,
+    power_threshold_w: float = DEFAULT_POWER_THRESHOLD_W,
     lambda_onehot: float = 1_000_000.0,
     lambda_power: float = 1_000_000.0,
 ) -> Tuple[np.ndarray, Dict[int, Tuple[str, int]]]:
@@ -130,6 +136,13 @@ def build_qubo(
 
     Input: list Appliance, DataFrame từ data_prep. Output: (Q, var_map) — Q là ma trận
     QUBO upper-triangular n×n, var_map ánh xạ index biến -> (tên thiết bị, giờ).
+
+    GIỚI HẠN của H_power (bug #5 — ghi rõ, KHÔNG sửa thuật toán đợt này): H_power chỉ phạt
+    theo TỪNG CẶP hai thiết bị LINH HOẠT trùng đúng GIỜ BẮT ĐẦU và tổng công suất cặp đó
+    > P_max. Nó KHÔNG cộng dồn tải NỀN cố định (tủ lạnh, điều hòa...) đang chạy cùng giờ,
+    cũng KHÔNG bắt trường hợp nhiều thiết bị có khung giờ CHỒNG LẤN nhưng khác giờ bắt đầu.
+    Vì vậy tổng công suất đồng thời thực tế có thể vượt ngưỡng mà QUBO không phạt — cần
+    kiểm tra thủ công với hệ máy móc lớn (đặc biệt tài khoản doanh nghiệp).
     # Rubric III.2 - QUBO ánh xạ ràng buộc thực tế
     # Rubric III.3 - chất lượng kỹ thuật, hiểu rõ tuning hyperparameter
     """
@@ -179,7 +192,7 @@ def build_qubo(
     #
     # TẠI SAO penalty bậc hai (quadratic) + cách chọn λ:
     #   Cost/reward term cỡ vài nghìn → vài chục nghìn đồng (1 thiết bị × vài kWh × giá
-    #   biên tối đa 3150đ/kWh). λ1/λ2 mặc định 1.000.000đ — lớn hơn cost term ~100-1000
+    #   biên tối đa 3.967đ/kWh — Bậc 5, QĐ 1279/QĐ-BCT). λ1/λ2 mặc định 1.000.000đ — lớn hơn cost term ~100-1000
     #   lần để optimizer KHÔNG BAO GIỜ đánh đổi vi phạm ràng buộc lấy cost thấp hơn
     #   (λ quá nhỏ → nghiệm vi phạm one-hot/quá tải lại có H thấp hơn → sai). Nhưng KHÔNG
     #   chọn λ quá lớn (vd >10^9): hệ số QUBO quá chênh lệch làm Hamiltonian QAOA khó tối

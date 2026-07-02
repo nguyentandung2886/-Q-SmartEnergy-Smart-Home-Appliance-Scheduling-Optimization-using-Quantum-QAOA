@@ -273,6 +273,14 @@ export default function ResultsPanel({
             ? `CẢNH BÁO CHÁY NỔ: ${peak.peakW.toLocaleString("vi-VN")}W cùng lúc lúc ${peak.peakHour}h (> ngưỡng ${safePowerW.toLocaleString("vi-VN")}W) — ${peak.names.join(", ")}`
             : `An toàn công suất: cao nhất ${peak.peakW.toLocaleString("vi-VN")}W lúc ${peak.peakHour}h, dưới ngưỡng ${safePowerW.toLocaleString("vi-VN")}W`}
         </div>
+        {overload && (
+          <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.4rem", fontWeight: 400 }}>
+            Lưu ý giới hạn: bộ tối ưu chỉ phát hiện các thiết bị linh hoạt trùng đúng GIỜ BẮT ĐẦU,
+            chưa bắt hết trường hợp khung giờ chồng lấn khác giờ bắt đầu và chưa cộng dồn tải các
+            thiết bị cố định (tủ lạnh, điều hòa...). Vui lòng kiểm tra thủ công với hệ thống máy móc
+            lớn — đặc biệt tài khoản doanh nghiệp.
+          </p>
+        )}
 
 
 

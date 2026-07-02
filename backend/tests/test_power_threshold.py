@@ -7,6 +7,27 @@ from api.optimize_router import DEFAULT_POWER_THRESHOLD_W, _power_threshold_for_
 from db.models import BusinessProfile, User
 
 
+def test_default_threshold_is_single_source_across_modules():
+    """DEFAULT_POWER_THRESHOLD_W lives in ONE place (core.qubo_builder) and is re-used
+    everywhere — guards against the 3-way duplication of the 5000.0 literal (bug #6). If
+    someone re-introduces a divergent literal in any of these, this fails."""
+    import inspect
+
+    from core.qubo_builder import DEFAULT_POWER_THRESHOLD_W as qubo_default
+    from core.qubo_builder import build_qubo
+    from core.quantum_runner import DEFAULT_POWER_THRESHOLD_W as runner_default
+    from core.quantum_runner import QuantumScheduler
+
+    assert DEFAULT_POWER_THRESHOLD_W is qubo_default
+    assert runner_default is qubo_default
+    # The function/constructor defaults resolve to the same shared constant, not a copy.
+    assert inspect.signature(build_qubo).parameters["power_threshold_w"].default == qubo_default
+    assert (
+        inspect.signature(QuantumScheduler.__init__).parameters["power_threshold_w"].default
+        == qubo_default
+    )
+
+
 def test_household_uses_default_threshold():
     assert DEFAULT_POWER_THRESHOLD_W == 5000.0
     assert _power_threshold_for_user(User(role="household")) == 5000.0

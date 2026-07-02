@@ -156,3 +156,30 @@ def test_build_daily_profile_default_weather_unchanged():
     default = build_daily_profile(day_of_month=12)
     explicit_sunny = build_daily_profile(day_of_month=12, weather_condition="sunny")
     assert list(default["solar_kwh"]) == list(explicit_sunny["solar_kwh"])
+
+
+class TestBuildDailyProfileMonthlyKwh:
+    """build_daily_profile(monthly_kwh=...) — per-user tier signal for the QUBO (bug #4)."""
+
+    def test_default_monthly_kwh_matches_module_default(self):
+        """monthly_kwh=None must reproduce the previous behavior: identical to passing the
+        module-level MONTHLY_KWH explicitly (the regression guard for this change)."""
+        from core.calc import MONTHLY_KWH
+
+        default = build_daily_profile(day_of_month=20)
+        explicit = build_daily_profile(day_of_month=20, monthly_kwh=MONTHLY_KWH)
+        assert list(default["price_per_kwh"]) == list(explicit["price_per_kwh"])
+
+    def test_higher_monthly_kwh_gives_higher_marginal_prices(self):
+        """A user consuming far more lands in a higher EVN tier late in the month, so the
+        QUBO sees strictly higher marginal prices than a low-consumption user — the whole
+        point of feeding the user's OWN total instead of the catalog default."""
+        low = build_daily_profile(day_of_month=30, monthly_kwh=200)
+        high = build_daily_profile(day_of_month=30, monthly_kwh=2000)
+        assert high["price_per_kwh"].sum() > low["price_per_kwh"].sum()
+
+    def test_monthly_kwh_only_affects_price_not_solar(self):
+        """monthly_kwh changes only the tier price axis; solar generation is independent."""
+        a = build_daily_profile(day_of_month=15, monthly_kwh=300)
+        b = build_daily_profile(day_of_month=15, monthly_kwh=1500)
+        assert list(a["solar_kwh"]) == list(b["solar_kwh"])

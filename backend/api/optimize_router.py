@@ -7,8 +7,9 @@ Per-user bill: calculated from the user's OWN appliance list total, not the glob
 import base64
 import io
 import json
+import logging
 from dataclasses import replace
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 import matplotlib
 matplotlib.use("Agg")  # headless, thread-safe backend for rendering charts in request handlers
@@ -20,18 +21,22 @@ from sqlalchemy.orm import Session
 from core import calc
 from core import data_prep
 from core import visualizer
-from core.appliance_catalog import split_by_flexibility, usage_windows
+from core.business_calc import EVN_BUSINESS_TIERS, calculate_business_bill, classify_hour_tou
+from core.appliance_catalog import DEFAULT_USAGE_WINDOWS, split_by_flexibility, usage_windows
 from auth import get_current_user
 from db.database import get_db
 from db.models import ApplianceModel, ScheduleModel, User
 from core.quantum_runner import QuantumScheduler, compare_qaoa_hyperparameters, solve_classical_bruteforce
-from core.qubo_builder import Appliance
+from core.qubo_builder import Appliance, DEFAULT_POWER_THRESHOLD_W
 
 router = APIRouter(tags=["optimize"])
 
-# Ngưỡng công suất đồng thời (W) mặc định cho hộ gia đình — khớp default power_threshold_w của
-# build_qubo (H_power) và banner an toàn ở frontend. Business dùng công suất hợp đồng đã khai báo.
-DEFAULT_POWER_THRESHOLD_W = 5000.0
+logger = logging.getLogger(__name__)
+
+# DEFAULT_POWER_THRESHOLD_W (ngưỡng công suất đồng thời W mặc định cho hộ gia đình) được import từ
+# core.qubo_builder — ĐỊNH NGHĨA DUY NHẤT, khớp default H_power của build_qubo và banner frontend.
+# Business dùng công suất hợp đồng đã khai báo (xem _power_threshold_for_user). Re-export để
+# test_power_threshold.py và các caller cũ vẫn import được từ đây.
 
 # Thương mại cảnh báo quá tải SỚM hơn sản xuất: với CÙNG công suất hợp đồng, ngưỡng thương mại chỉ
 # bằng 80% (sản xuất chịu tải máy móc nặng theo thiết kế; thương mại ưu tiên an toàn nên hạ ngưỡng).
@@ -105,18 +110,21 @@ def _fig_to_base64(fig) -> str:
 
 def _hourly_load(flex_schedule: dict, fixed_hours: dict, appliances: List) -> List[float]:
     """Build the household's 24-hour load profile (kWh per hour) from the ACTUAL usage:
-    flexible appliances run for their duration starting at their scheduled hour; fixed
-    appliances run in exactly the hours the user turned on (fixed_hours[name]). power_w
-    already includes quantity (see _db_rows_to_appliances)."""
+    appliances with an entry in flex_schedule run for their duration starting at that
+    scheduled hour (the hour QAOA or a pin actually chose — checked BEFORE is_flexible,
+    because pinning/coercion forces is_flexible=False while the true hour lives in
+    flex_schedule); other fixed appliances run in the hours the user turned on
+    (fixed_hours[name]). power_w already includes quantity (see _db_rows_to_appliances)."""
     load = [0.0] * 24
     for app in appliances:
         eff_kw = app.power_w / 1000.0
-        if app.is_flexible:
-            hour = flex_schedule.get(app.name)
+        hour = flex_schedule.get(app.name)
+        if hour is not None or app.is_flexible:
             if hour is None:
-                # Not in the optimized schedule (e.g. no candidate hours): fall back to a
-                # candidate hour so its energy is still counted — never silently drop load,
-                # or before/after totals diverge and savings become meaningless.
+                # Flexible but not in the optimized schedule (e.g. no candidate hours):
+                # fall back to a candidate hour so its energy is still counted — never
+                # silently drop load, or before/after totals diverge and savings become
+                # meaningless.
                 hour = app.candidate_hours[0] if app.candidate_hours else 0
             remaining = app.duration_hours
             k = 0
@@ -124,16 +132,68 @@ def _hourly_load(flex_schedule: dict, fixed_hours: dict, appliances: List) -> Li
                 load[(hour + k) % 24] += eff_kw * min(1.0, remaining)
                 remaining -= 1.0
                 k += 1
+        elif app.name in DEFAULT_USAGE_WINDOWS:
+            # Real usage pattern from the catalog: every ON hour is a full hour of use
+            # (the pattern is independent of duration_hours, e.g. Lò vi sóng's lunch window).
+            for hour_on in fixed_hours.get(app.name, []):
+                load[int(hour_on) % 24] += eff_kw
         else:
-            for hour in fixed_hours.get(app.name, []):
-                load[int(hour) % 24] += eff_kw
+            # Unknown fixed appliance: its hours come from usage_windows()'s fallback,
+            # a ceil(duration)-wide DISPLAY window. Bill the true duration_hours spread
+            # across those hours, or fractional durations get rounded up into extra kWh.
+            remaining = app.duration_hours
+            for hour_on in sorted(fixed_hours.get(app.name, [])):
+                if remaining <= 1e-9:
+                    break
+                load[int(hour_on) % 24] += eff_kw * min(1.0, remaining)
+                remaining -= 1.0
     return load
 
 
-def _bill_from_load(load: List[float], solar: List[float]) -> float:
+def _load_by_tou_period(load: List[float]) -> Dict[str, float]:
+    """Gộp 24 giá trị kWh/giờ trong MỘT NGÀY thành tổng kWh/THÁNG theo 3 khung giờ TOU
+    (classify_hour_tou), nhân 30 ngày — nhất quán với cách _bill_from_load nhân 30 cho
+    hộ gia đình."""
+    monthly = {"binh_thuong": 0.0, "thap_diem": 0.0, "cao_diem": 0.0}
+    for hour, kwh in enumerate(load):
+        monthly[classify_hour_tou(hour)] += kwh * 30.0
+    return monthly
+
+
+def _business_billing_params(user: Optional[User]) -> Optional[Tuple[str, str]]:
+    """(business_type, voltage_level) nếu user được tính theo biểu giá DOANH NGHIỆP, else None.
+
+    Business thiếu voltage_level (tài khoản tạo trước khi có field) fallback "duoi_6kv"
+    (cấp phổ biến nhất) và ghi log — KHÔNG âm thầm coi là chính xác. Business thiếu hẳn
+    business_profile rơi về biểu giá sinh hoạt như trước (None)."""
+    if user is None or user.role != "business":
+        return None
+    profile = getattr(user, "business_profile", None)
+    if profile is None or profile.business_type not in EVN_BUSINESS_TIERS:
+        return None
+    voltage_level = profile.voltage_level
+    if voltage_level not in EVN_BUSINESS_TIERS[profile.business_type]:
+        logger.warning(
+            "BusinessProfile user_id=%s không có voltage_level hợp lệ (%r) — fallback "
+            "'duoi_6kv' để tính bill; user nên cập nhật cấp điện áp thật.",
+            user.id, voltage_level,
+        )
+        voltage_level = "duoi_6kv"
+    return profile.business_type, voltage_level
+
+
+def _bill_from_load(load: List[float], solar: List[float], user: Optional[User] = None) -> float:
     """Monthly EVN bill from a daily load profile. Solar self-consumption per hour is
     min(load[h], solar[h]) — only the part of the load NOT covered by rooftop solar is bought
-    from the grid; that monthly grid total is charged through calc's tiered tariff."""
+    from the grid. Household: that monthly grid total goes through calc's tiered tariff.
+    Business (user role="business" with a business_profile): the per-hour grid load is
+    grouped by TOU period (QĐ 963/QĐ-BCT) and charged through the EVN business tariff for
+    the profile's business_type + voltage_level instead — Bug #1 fix."""
+    business = _business_billing_params(user)
+    if business is not None:
+        business_type, voltage_level = business
+        grid = [load[h] - min(load[h], solar[h]) for h in range(24)]
+        return calculate_business_bill(_load_by_tou_period(grid), business_type, voltage_level)
     daily_total = sum(load)
     daily_self = sum(min(load[h], solar[h]) for h in range(24))
     monthly_grid = max(0.0, (daily_total - daily_self) * 30.0)
@@ -158,19 +218,22 @@ def _worst_solar_schedule(flexible: List, solar: List[float]) -> dict:
     return worst
 
 
-def _compute_schedule_bills(flex_after: dict, fixed_hours: dict, appliances: List, profile):
+def _compute_schedule_bills(flex_after: dict, fixed_hours: dict, appliances: List, profile,
+                            user: Optional[User] = None):
     """bill_before/after and monthly kWh from the actual whole-house schedule. Both bills use
     the SAME fixed-appliance usage, so the savings isolate the value of optimizing flexible
     loads into solar hours; turning appliances off (fewer hours) lowers both bills (real
-    consumption drops). Returns (bill_before, bill_after, savings_percent, monthly_kwh)."""
+    consumption drops). `user` picks the tariff: business accounts are billed through the
+    EVN business TOU tariff, everyone else through the household tiers (_bill_from_load).
+    Returns (bill_before, bill_after, savings_percent, monthly_kwh)."""
     solar = [float(s) for s in profile["solar_kwh"]]
     flexible = [a for a in appliances if a.is_flexible]
     flex_before = _worst_solar_schedule(flexible, solar)
 
     load_after = _hourly_load(flex_after, fixed_hours, appliances)
     load_before = _hourly_load(flex_before, fixed_hours, appliances)
-    bill_after = _bill_from_load(load_after, solar)
-    bill_before = _bill_from_load(load_before, solar)
+    bill_after = _bill_from_load(load_after, solar, user)
+    bill_before = _bill_from_load(load_before, solar, user)
     monthly_kwh = sum(load_after) * 30.0
     savings = (bill_before - bill_after) / bill_before * 100 if bill_before > 0 else 0.0
     return bill_before, bill_after, savings, monthly_kwh
@@ -201,6 +264,14 @@ def _coerce_unoptimizable_to_fixed(appliances: List[Appliance]) -> List[Applianc
         else a
         for a in appliances
     ]
+
+
+def _estimate_user_monthly_kwh(appliances: List[Appliance]) -> float:
+    """Tổng kWh/tháng ước tính của user từ danh sách thiết bị — dùng để xác định user đang ở
+    bậc giá EVN nào khi XÂY QUBO (build_daily_profile), thay cho catalog mặc định MONTHLY_KWH
+    (bug #4). Công thức khớp AppData.jsx frontend: Σ power_w/1000 * duration_hours * 30.
+    power_w ở đây ĐÃ gồm quantity (xem _db_rows_to_appliances)."""
+    return sum(a.power_w / 1000.0 * a.duration_hours * 30.0 for a in appliances)
 
 
 def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
@@ -268,7 +339,13 @@ def optimize(
 
     flexible, _fixed = split_by_flexibility(user_appliances)
 
-    profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
+    # Tổng kWh thật của user quyết định bậc giá biên trong QUBO (H_cost), không dùng catalog
+    # mặc định MONTHLY_KWH — bug #4.
+    user_monthly_kwh_estimate = _estimate_user_monthly_kwh(user_appliances)
+    profile = data_prep.build_daily_profile(
+        payload.day_of_month, weather_condition=payload.weather_condition,
+        monthly_kwh=user_monthly_kwh_estimate,
+    )
     power_threshold_w = _power_threshold_for_user(current_user)
     scheduler = QuantumScheduler(flexible, profile, power_threshold_w=power_threshold_w)
     result = scheduler.solve(use_quantum=payload.use_quantum)
@@ -284,7 +361,7 @@ def optimize(
     # value of optimizing into solar; using fewer hours lowers real consumption and both bills.
     default_fixed_hours = _default_fixed_hours(user_appliances)
     bill_before, bill_after, savings_percent, user_monthly_kwh = _compute_schedule_bills(
-        result.schedule, default_fixed_hours, user_appliances, profile
+        result.schedule, default_fixed_hours, user_appliances, profile, current_user
     )
 
     # Fixed appliances' realistic usage windows for the Gantt (flexible ones are already in
@@ -368,9 +445,25 @@ def recompute_bill(
             for a in user_appliances
         ]
 
+    # Validate từng giờ trong schedule như /optimize làm với pinned (bug #7): 0-23 và, nếu
+    # appliance có khai candidate_hours, hour phải nằm trong đó — nếu không bill_after tính ra
+    # sai (giờ ngoài 0-23 bị wrap %24 âm thầm, giờ ngoài candidate không phản ánh lịch thật).
+    user_app_map = {a.name: a for a in user_appliances}
+    for name, hour in payload.schedule.items():
+        app = user_app_map.get(name)
+        if app is None:
+            continue  # bỏ qua thiết bị không thuộc danh sách user (khớp cách /optimize xử lý pinned)
+        if not (0 <= hour <= 23):
+            raise HTTPException(status_code=422, detail=f"'{name}': hour {hour} phải trong 0-23")
+        if app.candidate_hours and hour not in app.candidate_hours:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{name}': hour {hour} not in candidate_hours {list(app.candidate_hours)}",
+            )
+
     profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
     bill_before, bill_after, savings_percent, monthly_kwh = _compute_schedule_bills(
-        payload.schedule, payload.fixed_hours, user_appliances, profile
+        payload.schedule, payload.fixed_hours, user_appliances, profile, current_user
     )
     return BillOut(
         bill_before_vnd=bill_before, bill_after_vnd=bill_after,
@@ -408,7 +501,10 @@ def qaoa_analysis(
     user_appliances = _db_rows_to_appliances(rows)
     flexible, _fixed = split_by_flexibility(user_appliances)
 
-    profile = data_prep.build_daily_profile(payload.day_of_month, weather_condition=payload.weather_condition)
+    profile = data_prep.build_daily_profile(
+        payload.day_of_month, weather_condition=payload.weather_condition,
+        monthly_kwh=_estimate_user_monthly_kwh(user_appliances),
+    )
     scheduler = QuantumScheduler(flexible, profile)
     n = scheduler.Q.shape[0]
 

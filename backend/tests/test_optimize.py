@@ -1,5 +1,26 @@
 """Tests for POST /optimize and GET /schedules. QAOA tests are slow — run them last."""
 
+from api.optimize_router import _estimate_user_monthly_kwh
+from core.qubo_builder import Appliance
+
+
+def test_estimate_user_monthly_kwh_matches_frontend_formula():
+    """Per-user monthly kWh (bug #4) = Σ power_w/1000 * duration_hours * 30, matching
+    AppData.jsx. power_w already includes quantity here."""
+    apps = [
+        Appliance(name="A", power_w=1000, duration_hours=2, candidate_hours=(7, 13)),
+        Appliance(name="B", power_w=500, duration_hours=1, candidate_hours=(), is_flexible=False),
+    ]
+    # 1000/1000*2*30 + 500/1000*1*30 = 60 + 15 = 75
+    assert _estimate_user_monthly_kwh(apps) == 75.0
+
+
+def test_estimate_differs_for_users_with_different_total_power():
+    """Two users with different appliance totals feed a different tier signal into the QUBO."""
+    light = [Appliance(name="A", power_w=200, duration_hours=1, candidate_hours=(7, 13))]
+    heavy = [Appliance(name="A", power_w=3000, duration_hours=4, candidate_hours=(7, 13))]
+    assert _estimate_user_monthly_kwh(heavy) > _estimate_user_monthly_kwh(light)
+
 
 def test_optimize_requires_auth(client):
     response = client.post("/optimize", json={"day_of_month": 9, "weather_condition": "sunny"})

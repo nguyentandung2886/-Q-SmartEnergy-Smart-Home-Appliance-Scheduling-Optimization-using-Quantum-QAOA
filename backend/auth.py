@@ -16,6 +16,7 @@ from jwt import PyJWKClient, PyJWKClientError
 from sqlalchemy.orm import Session
 
 from core import appliance_catalog
+from core.business_calc import EVN_BUSINESS_TIERS
 from db.database import get_db
 from db.models import ApplianceModel, BusinessProfile, User
 
@@ -84,11 +85,19 @@ def _create_business_profile(db: Session, user: User, payload: dict) -> None:
     except (TypeError, ValueError):
         contracted_power_kw = None
 
+    # Cấp điện áp đấu nối: chỉ nhận key có trong biểu giá của business_type đã chọn
+    # (kinh doanh không có "tren_110kv"); giá trị lạ để None — billing sẽ fallback
+    # "duoi_6kv" và ghi log (xem optimize_router).
+    voltage_level = meta.get("voltage_level")
+    if voltage_level not in EVN_BUSINESS_TIERS[business_type]:
+        voltage_level = None
+
     db.add(BusinessProfile(
         user_id=user.id,
         business_type=business_type,
         scale=meta.get("scale"),
         contracted_power_kw=contracted_power_kw,
+        voltage_level=voltage_level,
     ))
 
 

@@ -86,13 +86,23 @@ def generate_tier_price_profile(day_of_month: int = 15, monthly_kwh: float = MON
     return pd.Series(prices, index=range(24), name="price_per_kwh")
 
 
-def build_daily_profile(day_of_month: int = 15, weather_condition: str = "sunny") -> pd.DataFrame:
+def build_daily_profile(day_of_month: int = 15, weather_condition: str = "sunny",
+                        monthly_kwh: float = None) -> pd.DataFrame:
     """24-row DataFrame (columns: hour, solar_kwh, price_per_kwh), one row per hour of the
     representative day. weather_condition ("sunny"/"cloudy"/"rainy") scales solar_kwh via
     weather_model.solar_multiplier() — see generate_solar_profile(). price_per_kwh is never
-    affected by weather (EVN tiered pricing has nothing to do with weather)."""
+    affected by weather (EVN tiered pricing has nothing to do with weather).
+
+    monthly_kwh sets WHICH tier the marginal price_per_kwh sits in (via
+    generate_tier_price_profile) — pass the user's OWN estimated monthly consumption so the
+    QUBO's tier-jump signal (H_cost) reflects that user, not the catalog default MONTHLY_KWH
+    (bug #4). None keeps the previous default (MONTHLY_KWH) — used where price tier is
+    irrelevant (e.g. recompute_bill, which only reads solar_kwh)."""
     solar = generate_solar_profile(weather_condition=weather_condition)
-    price = generate_tier_price_profile(day_of_month)
+    price = generate_tier_price_profile(
+        day_of_month,
+        monthly_kwh=monthly_kwh if monthly_kwh is not None else MONTHLY_KWH,
+    )
     return pd.DataFrame({
         "hour": range(24),
         "solar_kwh": solar.values,

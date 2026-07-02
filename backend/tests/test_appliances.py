@@ -58,6 +58,37 @@ def test_delete_appliance(client, auth_headers):
     assert all(a["id"] != aid for a in remaining)
 
 
+def test_create_appliance_rejects_out_of_range_candidate_hour(client, auth_headers):
+    """candidate_hours outside 0-23 must 422 at create time so /optimize can't later 500
+    on an unbuildable QUBO (bug #7)."""
+    headers = auth_headers("badhour_create")
+    response = client.post(
+        "/appliances",
+        json={"name": "Bad", "power_w": 500, "duration_hours": 1,
+              "candidate_hours": [7, 24], "is_flexible": True},
+        headers=headers,
+    )
+    assert response.status_code == 422
+
+
+def test_update_appliance_rejects_out_of_range_candidate_hour(client, auth_headers):
+    headers = auth_headers("badhour_update")
+    create = client.post(
+        "/appliances",
+        json={"name": "Ok", "power_w": 500, "duration_hours": 1,
+              "candidate_hours": [7, 13], "is_flexible": True},
+        headers=headers,
+    )
+    aid = create.json()["id"]
+    update = client.put(
+        f"/appliances/{aid}",
+        json={"name": "Ok", "power_w": 500, "duration_hours": 1,
+              "candidate_hours": [7, -1], "is_flexible": True},
+        headers=headers,
+    )
+    assert update.status_code == 422
+
+
 def test_cannot_touch_other_users_appliance(client, auth_headers):
     headers_a = auth_headers("usera")
     headers_b = auth_headers("userb")

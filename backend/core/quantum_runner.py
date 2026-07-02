@@ -33,7 +33,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from core.qubo_builder import build_qubo
+from core.qubo_builder import build_qubo, DEFAULT_POWER_THRESHOLD_W
 
 
 class QAOAExecutionError(Exception):
@@ -273,7 +273,7 @@ class QuantumScheduler:
         self,
         appliances: List["Appliance"],
         daily_profile: "pd.DataFrame",
-        power_threshold_w: float = 5000.0,
+        power_threshold_w: float = DEFAULT_POWER_THRESHOLD_W,
         lambda_onehot: float = 1_000_000.0,
         lambda_power: float = 1_000_000.0,
         qaoa_reps: int = 1,

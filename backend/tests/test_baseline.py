@@ -61,6 +61,21 @@ class TestCalculateBillWithVAT:
         result = calculate_bill(100)
         assert result == pytest.approx(214272.0, abs=0.01)
 
+    def test_calculate_bill_tier2_boundary_includes_vat(self):
+        """200 kWh, exactly tier 2's upper boundary: 100*1984 + 100*2380 = 436,400đ pre-VAT;
+        *1.08 = 471,312đ exactly."""
+        assert calculate_bill(200) == pytest.approx(471312.0, abs=0.01)
+
+    def test_calculate_bill_tier3_boundary_includes_vat(self):
+        """400 kWh, exactly tier 3's upper boundary: 436,400 + 200*2998 = 1,036,000đ pre-VAT;
+        *1.08 = 1,118,880đ exactly."""
+        assert calculate_bill(400) == pytest.approx(1118880.0, abs=0.01)
+
+    def test_calculate_bill_tier4_boundary_includes_vat(self):
+        """700 kWh, exactly tier 4's upper boundary: 1,036,000 + 300*3571 = 2,107,300đ pre-VAT;
+        *1.08 = 2,275,884đ exactly."""
+        assert calculate_bill(700) == pytest.approx(2275884.0, abs=0.01)
+
     def test_calculate_bill_negative_input_raises(self):
         with pytest.raises(ValueError, match="non-negative"):
             calculate_bill(-10)
