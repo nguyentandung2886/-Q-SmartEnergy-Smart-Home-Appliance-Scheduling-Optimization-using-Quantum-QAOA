@@ -106,11 +106,26 @@ def solve_qaoa(
     maxiter: int = 50,
     seed: int = 42,
     initial_bitstring: str = None,
+    shots: int = 1024,
+    optimizer: str = "COBYLA",
+    backend=None,
 ) -> Tuple[str, float]:
     """Giải QUBO bằng QAOA trên Aer Simulator (recipe đã verify cho bộ version này).
 
     Bọc mọi lỗi gốc từ qiskit/numpy trong QAOAExecutionError để caller fallback
     classical — KHÔNG để traceback thô lộ ra giữa demo.
+
+    Tham số cấu hình QAOA:
+      - reps (số layer p): p càng lớn ansatz càng biểu diễn tốt nhưng tối ưu càng khó/chậm.
+      - maxiter: số vòng lặp tối đa của optimizer cổ điển.
+      - shots: số lần đo mỗi mạch (nhiều shots -> ước lượng kỳ vọng chính xác hơn, chậm hơn).
+      - optimizer: "COBYLA" (mặc định, gradient-free, ổn định cho ít qubit) hoặc "SPSA"
+        (nhiễu tốt hơn khi mạch/đo có noise, hợp bài lớn hơn).
+      - backend: mặc định AerSimulator(); truyền backend khác để đổi target mà không sửa hàm.
+
+    TRADE-OFF (giữ trung thực, xem thêm QuantumScheduler.solve): trên simulator, với số biến
+    lớn (>20-25 qubit) QAOA mới thực sự có lợi so với brute-force; ở quy mô PoC 4-5 qubit hiện
+    tại brute-force (2^n nhỏ) NHANH HƠN và cho global optimum chắc chắn, còn QAOA chỉ xấp xỉ.
     # Rubric III.3 - thành thạo Qiskit-Optimization
     """
     try:
@@ -119,7 +134,7 @@ def solve_qaoa(
         from qiskit_optimization import QuadraticProgram
         from qiskit_optimization.algorithms import MinimumEigenOptimizer
         from qiskit_algorithms import QAOA
-        from qiskit_algorithms.optimizers import COBYLA
+        from qiskit_algorithms.optimizers import COBYLA, SPSA
         from qiskit_algorithms.utils import algorithm_globals
         from qiskit_aer.primitives import SamplerV2
         from qiskit_aer import AerSimulator
@@ -144,9 +159,11 @@ def solve_qaoa(
 
         # SamplerV2 (KHÔNG phải V1) + transpiler=pm để decompose ansatz trước Aer,
         # nếu không sẽ lỗi AerError: unknown instruction: QAOA.
-        backend = AerSimulator()
+        # backend mặc định = AerSimulator(); shots mặc định 1024 (giữ nguyên hành vi đã verify).
+        backend = backend if backend is not None else AerSimulator()
         pm = generate_preset_pass_manager(optimization_level=1, backend=backend)
-        sampler = SamplerV2()
+        sampler = SamplerV2(default_shots=shots)
+        classical_optimizer = SPSA(maxiter=maxiter) if optimizer.upper() == "SPSA" else COBYLA(maxiter=maxiter)
 
         # Warm-Start QAOA using greedy bitstring as initial_state
         initial_state = None
@@ -157,7 +174,7 @@ def solve_qaoa(
                 if initial_bitstring[j] == "1":
                     initial_state.x(j)
 
-        qaoa = QAOA(sampler=sampler, optimizer=COBYLA(maxiter=maxiter), reps=reps, transpiler=pm, initial_state=initial_state)
+        qaoa = QAOA(sampler=sampler, optimizer=classical_optimizer, reps=reps, transpiler=pm, initial_state=initial_state)
         solver = MinimumEigenOptimizer(qaoa)
         result = solver.solve(qp)
 

@@ -8,6 +8,7 @@ import base64
 import io
 import json
 import logging
+import os
 from dataclasses import replace
 from typing import Dict, List, Literal, Optional, Tuple
 
@@ -41,6 +42,15 @@ logger = logging.getLogger(__name__)
 # Thương mại cảnh báo quá tải SỚM hơn sản xuất: với CÙNG công suất hợp đồng, ngưỡng thương mại chỉ
 # bằng 80% (sản xuất chịu tải máy móc nặng theo thiết kế; thương mại ưu tiên an toàn nên hạ ngưỡng).
 COMMERCIAL_SAFETY_MARGIN = 0.8
+
+
+def _qaoa_is_default() -> bool:
+    """Thuật toán tối ưu mặc định của server, đọc từ env OPTIMIZATION_ALGORITHM=qaoa|brute_force.
+
+    Mặc định "qaoa". Đặt "brute_force" để tắt QAOA toàn server khi cần debug (vd nghi ngờ
+    QAOA cho nghiệm lạ) mà không phải sửa code hay từng request. Giá trị không hợp lệ -> coi
+    như "qaoa" (mặc định an toàn cho demo)."""
+    return os.getenv("OPTIMIZATION_ALGORITHM", "qaoa").strip().lower() != "brute_force"
 
 
 def _power_threshold_for_user(user: User) -> float:
@@ -348,7 +358,17 @@ def optimize(
     )
     power_threshold_w = _power_threshold_for_user(current_user)
     scheduler = QuantumScheduler(flexible, profile, power_threshold_w=power_threshold_w)
-    result = scheduler.solve(use_quantum=payload.use_quantum)
+    # TẠI SAO mặc định QAOA: bài lập lịch thiết bị là tối ưu tổ hợp (combinatorial). Brute-force
+    # duyệt toàn bộ 2^n tổ hợp -> đúng tuyệt đối nhưng bùng nổ theo cấp số mũ, không scale khi
+    # số biến (thiết bị × giờ ứng viên) tăng. QAOA cho lời giải GẦN ĐÚNG với chi phí thấp hơn
+    # trên bài lớn, nên đặt làm mặc định (env OPTIMIZATION_ALGORITHM=qaoa). Có thể chuyển về
+    # brute_force (env) hoặc use_quantum=False (per-request) để debug.
+    # LƯU Ý TRUNG THỰC: ở quy mô PoC hiện tại (4-5 qubit) 2^n rất nhỏ nên brute-force thực ra
+    # NHANH HƠN và chắc chắn tối ưu; QuantumScheduler.solve() vì thế vẫn đối chiếu brute-force
+    # và lấy nghiệm đó nếu tốt hơn. QAOA ở đây là để chứng minh pipeline lượng tử, chưa phải
+    # thắng về hiệu năng — lợi thế QAOA chỉ xuất hiện khi số biến lớn (>20-25 qubit).
+    use_quantum = payload.use_quantum and _qaoa_is_default()
+    result = scheduler.solve(use_quantum=use_quantum)
 
     # Merge pinned entries back — QAOA only ran on remaining flexible appliances
     for name, hour in pinned_to_apply.items():
