@@ -152,15 +152,15 @@ function GroupRow({ name, items, expanded, onToggle, onSave, onDelete }) {
 export default function ApplianceManager({ appliances, totalKwh, onSave, onDelete, onAdd }) {
   const { runOptimize } = useAppData();
   const [newName, setNewName] = useState("");
-  const [newPower, setNewPower] = useState(100);
-  const [newQty, setNewQty] = useState(1);
+  const [newPower, setNewPower] = useState(null);
+  const [newQty, setNewQty] = useState(null);
 
   // "flex" = tải theo nhu cầu (is_flexible false). "fixed" = tải tự lên lịch
   // (is_flexible true): khai báo khung giờ được phép chạy + số giờ cần chạy,
   // hệ thống tính candidate_hours cho QAOA.
   const [mode, setMode] = useState("flex");
   // Mỗi khung giờ chạy độc lập của cùng 1 thiết bị: {start, end, duration}. Mặc định 1 khung.
-  const [windows, setWindows] = useState([{ start: 22, end: 6, duration: 4 }]);
+  const [windows, setWindows] = useState([{ start: null, end: null, duration: null }]);
   const [fixedError, setFixedError] = useState("");
   const [addedHint, setAddedHint] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({});
@@ -172,7 +172,7 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
     setWindows((ws) => ws.map((w, idx) => (idx === i ? { ...w, [field]: value } : w)));
   }
   function addWindow() {
-    setWindows((ws) => [...ws, { start: 22, end: 6, duration: 4 }]);
+    setWindows((ws) => [...ws, { start: null, end: null, duration: null }]);
   }
   function removeWindow(i) {
     setWindows((ws) => (ws.length > 1 ? ws.filter((_, idx) => idx !== i) : ws));
