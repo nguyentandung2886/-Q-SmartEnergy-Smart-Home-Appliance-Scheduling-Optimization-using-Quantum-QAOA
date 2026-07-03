@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db.database import Base, engine
 
-# Removed Base.metadata.create_all(bind=engine) to strictly enforce Alembic migrations.
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Q-SmartEnergy API", version="1.0.0")
 
