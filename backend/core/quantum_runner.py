@@ -296,8 +296,10 @@ class QuantumScheduler:
         qaoa_reps: int = 1,
         qaoa_maxiter: int = 50,
         seed: int = 42,
+        fixed_load_w: Dict[int, float] = None,
     ) -> None:
-        """Build QUBO ngay trong __init__, lưu self.Q, self.var_map."""
+        """Build QUBO ngay trong __init__, lưu self.Q, self.var_map. fixed_load_w (tải nền cố
+        định W theo giờ) được chuyển thẳng cho build_qubo để H_power cộng dồn tải nền (bug #5)."""
         self.appliances = appliances
         self.daily_profile = daily_profile
         self.qaoa_reps = qaoa_reps
@@ -309,6 +311,7 @@ class QuantumScheduler:
             power_threshold_w=power_threshold_w,
             lambda_onehot=lambda_onehot,
             lambda_power=lambda_power,
+            fixed_load_w=fixed_load_w,
         )
 
     def solve(self, use_quantum: bool = True) -> ScheduleResult:

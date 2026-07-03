@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { AppDataProvider } from "../AppData";
 import { useAuth } from "../AuthContext";
+import { getMe } from "../api";
 import ThemeToggle from "./ThemeToggle";
 import NotificationCenter from "./NotificationCenter";
 
@@ -17,6 +19,17 @@ const TABS = [
 export default function AppLayout() {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  // Role from the backend (GET /auth/me), the trusted source. Business accounts don't get the
+  // Dự báo tab — duration forecasting only covers household appliances (see RequireHousehold in App.jsx).
+  const [role, setRole] = useState(null);
+
+  useEffect(() => {
+    getMe()
+      .then((me) => setRole(me.role))
+      .catch(() => setRole(null));
+  }, []);
+
+  const tabs = TABS.filter((t) => t.to !== "/app/forecast" || role !== "business");
 
   function handleLogout() {
     logout();
@@ -34,7 +47,7 @@ export default function AppLayout() {
             </div>
 
             <nav className="nav-tabs">
-              {TABS.map((t) => (
+              {tabs.map((t) => (
                 <NavLink
                   key={t.to}
                   to={t.to}

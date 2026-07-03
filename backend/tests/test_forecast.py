@@ -1,4 +1,13 @@
 """Tests for POST /forecast and /optimize duration_overrides (ML forecasting subsystem)."""
+from db.models import BusinessProfile, User
+
+
+def _make_business_user(db_session, uid: str, business_type: str) -> None:
+    user = User(supabase_uid=uid, email=f"{uid}@test.local", role="business")
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(BusinessProfile(user_id=user.id, business_type=business_type))
+    db_session.commit()
 
 
 def test_forecast_returns_prediction_and_mae(client, auth_headers):
@@ -46,6 +55,30 @@ def test_forecast_invalid_program_returns_422(client, auth_headers):
 def test_forecast_requires_auth(client):
     response = client.post("/forecast", json={"jobs": {"Máy giặt": {"load_kg": 5, "program": "normal"}}})
     assert response.status_code == 401
+
+
+def test_forecast_forbidden_for_business_production(client, db_session):
+    _make_business_user(db_session, "bizprod_fc", business_type="production")
+    headers = {"Authorization": "Bearer bizprod_fc"}
+    assert client.get("/forecast/schema", headers=headers).status_code == 403
+    resp = client.post(
+        "/forecast",
+        json={"jobs": {"Máy giặt": {"load_kg": 5, "program": "normal"}}},
+        headers=headers,
+    )
+    assert resp.status_code == 403
+
+
+def test_forecast_forbidden_for_business_commercial(client, db_session):
+    _make_business_user(db_session, "bizcomm_fc", business_type="commercial")
+    headers = {"Authorization": "Bearer bizcomm_fc"}
+    assert client.get("/forecast/schema", headers=headers).status_code == 403
+    resp = client.post(
+        "/forecast",
+        json={"jobs": {"Máy giặt": {"load_kg": 5, "program": "normal"}}},
+        headers=headers,
+    )
+    assert resp.status_code == 403
 
 
 def test_optimize_duration_override_changes_monthly_kwh(client, auth_headers):

@@ -23,8 +23,9 @@ Economic/Physical Meaning:
         covered by rooftop solar at that hour.
   Two hard constraints are enforced as quadratic penalties:
     - one-hot: each appliance runs exactly once (H_onehot);
-    - power: two appliances may not share an hour if their combined draw exceeds a
-      simultaneous-power threshold (H_power).
+    - power: the simultaneous draw at a start hour may not exceed a power threshold
+      (H_power) — this counts a flexible appliance plus any FIXED background load already
+      on at that hour, and any second flexible appliance sharing the hour.
   Note: price_per_kwh is the marginal EVN TIER price (bậc thang/lũy tiến) at that point
   in the monthly cumulative total — NOT a time-of-day rate. There is no time-of-day
   pricing in this market.
@@ -45,7 +46,7 @@ Rubric Mapping:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -114,6 +115,7 @@ def build_qubo(
     power_threshold_w: float = DEFAULT_POWER_THRESHOLD_W,
     lambda_onehot: float = 1_000_000.0,
     lambda_power: float = 1_000_000.0,
+    fixed_load_w: Optional[Dict[int, float]] = None,
 ) -> Tuple[np.ndarray, Dict[int, Tuple[str, int]]]:
     """
     Hàm mục tiêu (objective Hamiltonian) được mã hóa vào ma trận Q:
@@ -123,26 +125,32 @@ def build_qubo(
         H_cost   = Σ_{i,k} x_{i,k} · E_i · P(h_{i,k})
         H_solar  = - Σ_{i,k} x_{i,k} · min(E_i, S(h_{i,k})) · P(h_{i,k})
         H_onehot = Σ_i ( Σ_k x_{i,k} - 1 )²        [mỗi thiết bị chạy đúng 1 lần]
-        H_power  = Σ_{(i,k),(i',k'): i≠i', h_{i,k}=h_{i',k'}, power_i+power_{i'}>P_max}
+        H_power  = Σ_{(i,k): power_i + F(h_{i,k}) > P_max} x_{i,k}            [tải nền + 1 thiết bị]
+                 + Σ_{(i,k),(i',k'): i≠i', h_{i,k}=h_{i',k'}, power_i+power_{i'}+F(h)>P_max}
                        x_{i,k} · x_{i',k'}          [không vượt ngưỡng công suất P_max]
 
         E_i = energy_kwh (power_w/1000 * duration_hours);  P(h) = price_per_kwh tại h;
-        S(h) = solar_kwh tại h;  P_max = power_threshold_w.
+        S(h) = solar_kwh tại h;  F(h) = tải nền cố định (W) đang bật tại h (fixed_load_w);
+        P_max = power_threshold_w.
 
     Ý nghĩa kinh tế: H_cost + H_solar cho 1 biến = x_{i,k} · max(0, E_i - S(h)) · P(h)
     — chỉ phần kWh KHÔNG được solar tự cấp mới bị tính theo bậc giá. Giữ 2 số hạng
     tách biệt vì mỗi số hạng là 1 trục giá trị trong pitch: H_cost = "tránh nhảy bậc
     giá", H_solar = "tối đa hóa self-consumption".
 
+    fixed_load_w: dict {giờ 0-23: tổng công suất (W) tải NỀN CỐ ĐỊNH đang bật tại giờ đó}.
+    None = coi như không có tải nền (mọi giờ 0W) — giữ nguyên hành vi cũ cho caller không
+    truyền. Caller (api.optimize_router) tính từ fixed appliances qua usage_windows.
+
     Input: list Appliance, DataFrame từ data_prep. Output: (Q, var_map) — Q là ma trận
     QUBO upper-triangular n×n, var_map ánh xạ index biến -> (tên thiết bị, giờ).
 
-    GIỚI HẠN của H_power (bug #5 — ghi rõ, KHÔNG sửa thuật toán đợt này): H_power chỉ phạt
-    theo TỪNG CẶP hai thiết bị LINH HOẠT trùng đúng GIỜ BẮT ĐẦU và tổng công suất cặp đó
-    > P_max. Nó KHÔNG cộng dồn tải NỀN cố định (tủ lạnh, điều hòa...) đang chạy cùng giờ,
-    cũng KHÔNG bắt trường hợp nhiều thiết bị có khung giờ CHỒNG LẤN nhưng khác giờ bắt đầu.
-    Vì vậy tổng công suất đồng thời thực tế có thể vượt ngưỡng mà QUBO không phạt — cần
-    kiểm tra thủ công với hệ máy móc lớn (đặc biệt tài khoản doanh nghiệp).
+    HÀNH VI của H_power (bug #5 đã fix): xét công suất đồng thời tại GIỜ BẮT ĐẦU của mỗi
+    biến, CỘNG tải nền cố định F(h) tại giờ đó. Phạt (a) từng biến linh hoạt mà chỉ riêng nó
+    + tải nền đã vượt P_max (đường chéo), và (b) cặp hai thiết bị LINH HOẠT trùng giờ mà tổng
+    cặp + tải nền vượt P_max (off-diagonal). GIỚI HẠN CÒN LẠI: chỉ xét đúng GIỜ BẮT ĐẦU, chưa
+    bắt trường hợp hai thiết bị có khung giờ CHỒNG LẤN nhưng khác giờ bắt đầu (độ phân giải
+    theo giờ bắt đầu, không theo toàn bộ khoảng chạy).
     # Rubric III.2 - QUBO ánh xạ ràng buộc thực tế
     # Rubric III.3 - chất lượng kỹ thuật, hiểu rõ tuning hyperparameter
     """
@@ -207,14 +215,26 @@ def build_qubo(
                 lo, hi = idxs[a], idxs[b]   # idxs tăng dần nên lo < hi (upper-triangular)
                 Q[lo, hi] += 2.0 * lambda_onehot
 
-    # --- λ2 · H_power (off-diagonal) ---
-    # Phạt cặp biến của 2 thiết bị KHÁC NHAU, cùng giờ chạy, mà tổng công suất > P_max.
+    # --- λ2 · H_power ---
+    # Công suất đồng thời tại GIỜ BẮT ĐẦU của biến, CỘNG tải nền cố định F(h) tại giờ đó.
+    bg = fixed_load_w or {}   # F(h); None -> {} -> mọi giờ 0W (hành vi cũ khi không có tải nền)
+
+    # (a) Đường chéo: một thiết bị linh hoạt mà chỉ riêng nó + tải nền tại giờ đó đã > P_max.
+    #     x_j² = x_j nên số hạng tuyến tính này nằm trên đường chéo.
+    for j in range(n):
+        if var_power[j] + bg.get(var_hour[j], 0.0) > power_threshold_w:
+            Q[j, j] += lambda_power
+
+    # (b) Off-diagonal: cặp biến của 2 thiết bị KHÁC NHAU, cùng giờ chạy, mà tổng công suất
+    #     cặp CỘNG tải nền tại giờ đó > P_max.
     for ja in range(n):
         for jb in range(ja + 1, n):
             same_appliance = any((ja in idxs and jb in idxs) for idxs in vars_of_appliance)
             if same_appliance:
                 continue
-            if var_hour[ja] == var_hour[jb] and (var_power[ja] + var_power[jb]) > power_threshold_w:
+            if var_hour[ja] == var_hour[jb] and (
+                var_power[ja] + var_power[jb] + bg.get(var_hour[ja], 0.0)
+            ) > power_threshold_w:
                 Q[ja, jb] += lambda_power   # ja < jb => upper-triangular
 
     return Q, var_map

@@ -16,9 +16,20 @@ from core import forecaster
 router = APIRouter(tags=["forecast"])
 
 
+def _require_household(current_user: User) -> None:
+    """Dự báo thời lượng chỉ áp dụng cho 3 thiết bị hộ gia đình (máy giặt, bình nóng lạnh) nên
+    chặn hẳn tài khoản doanh nghiệp — thiết bị nhà máy không nằm trong mô hình FLEX_FORECAST."""
+    if current_user.role == "business":
+        raise HTTPException(
+            status_code=403,
+            detail="Tính năng dự báo chỉ dành cho tài khoản hộ gia đình.",
+        )
+
+
 @router.get("/forecast/schema")
 def forecast_schema(current_user: User = Depends(get_current_user)) -> Dict[str, list]:
     """Đặc trưng mỗi thiết bị linh hoạt cần để dự báo — UI dựa vào đây để render đúng input."""
+    _require_household(current_user)
     return forecaster.FORECAST_SCHEMA
 
 
@@ -29,6 +40,7 @@ def forecast(
 ) -> Dict[str, Dict[str, float]]:
     """payload: {"jobs": {ten_thiet_bi: {dac_trung: gia_tri}}}.
     Trả {ten_thiet_bi: {"predicted_hours": x, "test_mae": y}}. Bỏ qua thiết bị không có mô hình."""
+    _require_household(current_user)
     jobs = payload.get("jobs", {})
     if not isinstance(jobs, dict):
         raise HTTPException(status_code=422, detail="'jobs' phải là object {ten_thiet_bi: dac_trung}")

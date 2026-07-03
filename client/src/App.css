@@ -217,6 +217,14 @@ td input { width: 92px; }
 .gantt-block-flex { background: var(--accent); opacity: 0.9; }
 .gantt-block-flex:hover { opacity: 1; box-shadow: var(--shadow-hover); }
 .gantt-block-dragging { opacity: 0.35; }
+/* Bóng mờ vị trí cũ + nhấn mạnh khối vừa dịch: cho thấy rõ trước/sau khi kéo trên cùng một hàng. */
+.gantt-block-ghost { background: transparent; border: 1.5px dashed var(--text-muted); opacity: 0.6; z-index: 1; cursor: default; pointer-events: none; }
+.gantt-block-moved { box-shadow: 0 0 0 2px var(--accent), var(--shadow-hover); }
+.gantt-legend { display: flex; gap: 1.25rem; margin-top: 0.6rem; font-size: 0.8rem; color: var(--text-muted); }
+.gantt-legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.gantt-swatch { width: 14px; height: 10px; border-radius: 3px; display: inline-block; }
+.gantt-swatch-ghost { background: transparent; border: 1.5px dashed var(--text-muted); }
+.gantt-swatch-now { background: var(--accent); }
 
 /* ── Auth pages ─────────────────────────────────────────── */
 .auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }

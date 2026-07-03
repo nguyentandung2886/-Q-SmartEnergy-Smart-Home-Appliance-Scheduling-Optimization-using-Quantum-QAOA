@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -20,8 +20,26 @@ export default function GanttEditor({
   const [draggingName, setDraggingName] = useState(null);
   const [dragOverInfo, setDragOverInfo] = useState(null); // { name, hour }
   const [pointerOff, setPointerOff] = useState(false);
+  // Vị trí CŨ của mỗi khối linh hoạt vừa bị dịch (kéo -> tối ưu lại): { name: giờ_trước }. Dùng để
+  // vẽ "bóng mờ" ở chỗ cũ, giúp người xem phân biệt lịch TRƯỚC và SAU khi kéo trên cùng một bảng —
+  // nếu không, khối chỉ nhảy sang chỗ mới và giám khảo dễ hiểu nhầm đang xem hai lịch khác nhau.
+  const prevScheduleRef = useRef(schedule);
+  const [movedFrom, setMovedFrom] = useState({});
 
-  useEffect(() => { setLocalSchedule({ ...schedule }); }, [schedule]);
+  useEffect(() => {
+    // So lịch mới với lịch ngay trước đó: khối linh hoạt nào đổi giờ thì ghi lại giờ cũ để vẽ bóng.
+    const prev = prevScheduleRef.current || {};
+    const moved = {};
+    for (const a of appliances) {
+      if (!a.is_flexible) continue;
+      const before = prev[a.name];
+      const after = schedule?.[a.name];
+      if (before != null && after != null && before !== after) moved[a.name] = before;
+    }
+    setMovedFrom(moved);
+    setLocalSchedule({ ...schedule });
+    prevScheduleRef.current = schedule;
+  }, [schedule, appliances]);
   useEffect(() => { setLocalFixedHours(fixedHours); }, [fixedHours]);
 
   function getApp(name) {
@@ -165,8 +183,17 @@ export default function GanttEditor({
                   />
                 );
               })}
+              {/* Bóng mờ ở vị trí CŨ của khối vừa bị kéo (giờ trước tối ưu), vẽ dưới khối hiện tại. */}
+              {flexible && movedFrom[name] != null && (
+                <div
+                  className="gantt-block gantt-block-ghost"
+                  style={{ gridColumn: `${movedFrom[name] + 1} / span ${Math.min(blockLen, 24 - movedFrom[name])}` }}
+                  title={`${name}: vị trí trước khi kéo (${movedFrom[name]}h)`}
+                />
+              )}
               {/* Flexible appliances get a draggable block on top of the cells */}
               {flexible && (() => {
+                const movedFromHour = movedFrom[name];
                 const len1 = Math.min(blockLen, 24 - blockStart);
                 const len2 = blockStart + blockLen > 24 ? (blockStart + blockLen - 24) : 0;
                 const renderBlock = (start, len, isPart2) => {
@@ -179,6 +206,7 @@ export default function GanttEditor({
                         "gantt-block-flex",
                         isBeingDragged ? "gantt-block-dragging" : "",
                         isActive ? "gantt-block-active" : "",
+                        movedFromHour != null && !isPart2 ? "gantt-block-moved" : "",
                       ].filter(Boolean).join(" ")}
                       style={{
                         gridColumn: `${start + 1} / span ${len}`,
@@ -206,6 +234,14 @@ export default function GanttEditor({
           </div>
         );
       })}
+
+      {/* Chú thích chỉ hiện khi vừa có khối bị dịch — tự giải thích trước/sau khi kéo, không cần lời. */}
+      {Object.keys(movedFrom).length > 0 && (
+        <div className="gantt-legend">
+          <span><span className="gantt-swatch gantt-swatch-ghost" /> Vị trí trước khi kéo</span>
+          <span><span className="gantt-swatch gantt-swatch-now" /> Vị trí sau tối ưu</span>
+        </div>
+      )}
     </div>
   );
 }

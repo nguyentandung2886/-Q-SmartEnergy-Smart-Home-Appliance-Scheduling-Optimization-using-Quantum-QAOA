@@ -1,14 +1,38 @@
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { getMe } from "../api";
 
 export default function GuideTab() {
+  // Business accounts don't have the Dự báo tab (see AppLayout/RequireHousehold), so hide its
+  // guide section for them to avoid pointing at a feature they can't reach.
+  const [role, setRole] = useState(null);
+
+  useEffect(() => {
+    getMe()
+      .then((me) => setRole(me.role))
+      .catch(() => setRole(null));
+  }, []);
+
+  // Business bỏ bước "Dự báo" nên số bước và cách đánh số các card sau đó lùi lại một.
+  const isBusiness = role === "business";
+
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
       <div className="page-head">
         <p className="eyebrow">Bắt đầu</p>
         <h1>Hướng dẫn sử dụng</h1>
         <p className="page-sub">
-          Bốn bước để tối ưu hóa lịch dùng điện với Q-SmartEnergy: khai báo thiết bị, xem dự báo,
-          chạy tối ưu và đọc kết quả. Làm theo đúng thứ tự các tab bên dưới.
+          {isBusiness ? (
+            <>
+              Ba bước để tối ưu hóa lịch dùng điện với Q-SmartEnergy: khai báo thiết bị, chạy tối ưu
+              và đọc kết quả. Làm theo đúng thứ tự các tab bên dưới.
+            </>
+          ) : (
+            <>
+              Bốn bước để tối ưu hóa lịch dùng điện với Q-SmartEnergy: khai báo thiết bị, xem dự báo,
+              chạy tối ưu và đọc kết quả. Làm theo đúng thứ tự các tab bên dưới.
+            </>
+          )}
         </p>
       </div>
 
@@ -38,21 +62,23 @@ export default function GuideTab() {
           </p>
         </div>
 
-        <div className="card">
-          <div className="card-head">
-            <h3>2. Dự báo</h3>
-            <span className="tag">Tab Dự báo</span>
+        {role !== "business" && (
+          <div className="card">
+            <div className="card-head">
+              <h3>2. Dự báo</h3>
+              <span className="tag">Tab Dự báo</span>
+            </div>
+            <p>
+              Xem dự báo thời tiết theo vị trí của bạn cho hôm nay và các ngày tới. Thời tiết (nắng,
+              nhiều mây, mưa) quyết định lượng điện mặt trời tự sản xuất, và ảnh hưởng đến cách thuật
+              toán xếp các tải linh hoạt vào khung giờ có nắng.
+            </p>
           </div>
-          <p>
-            Xem dự báo thời tiết theo vị trí của bạn cho hôm nay và các ngày tới. Thời tiết (nắng,
-            nhiều mây, mưa) quyết định lượng điện mặt trời tự sản xuất, và ảnh hưởng đến cách thuật
-            toán xếp các tải linh hoạt vào khung giờ có nắng.
-          </p>
-        </div>
+        )}
 
         <div className="card">
           <div className="card-head">
-            <h3>3. Tối ưu hóa</h3>
+            <h3>{isBusiness ? "2" : "3"}. Tối ưu hóa</h3>
             <span className="tag">Tab Tối ưu hóa</span>
           </div>
           <p>
@@ -96,7 +122,7 @@ export default function GuideTab() {
 
         <div className="card">
           <div className="card-head">
-            <h3>4. Tổng quan & Lịch sử</h3>
+            <h3>{isBusiness ? "3" : "4"}. Tổng quan & Lịch sử</h3>
             <span className="tag">Tab Tổng quan</span>
           </div>
           <p>

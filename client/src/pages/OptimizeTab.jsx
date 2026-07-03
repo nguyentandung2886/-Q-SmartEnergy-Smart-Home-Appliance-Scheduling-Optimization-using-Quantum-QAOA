@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppData } from "../AppData";
+import { getMe } from "../api";
 import { WEATHER_OPTIONS } from "../forecastConfig";
 import GanttEditor from "../components/GanttEditor";
 import ExplainSection from "../components/ExplainSection";
@@ -34,6 +36,14 @@ export default function OptimizeTab() {
     todayISO, tomorrowISO, maxDateISO, selectedDate, changeDate, forecastAvailable,
   } = useAppData();
 
+  // Business bỏ bước "Dự báo" (Bước 2) nên tab này là Bước 2 với họ, Bước 3 với hộ gia đình.
+  const [role, setRole] = useState(null);
+  useEffect(() => {
+    getMe()
+      .then((me) => setRole(me.role))
+      .catch(() => setRole(null));
+  }, []);
+
   // Ngưỡng công suất đồng thời an toàn (W), theo role — backend trả về trong /optimize.
   // Lịch sử lưu (rehydrate) không có trường này nên fallback về mặc định hộ gia đình 5000W.
   const safePowerW = result?.power_threshold_w ?? 5000;
@@ -51,7 +61,7 @@ export default function OptimizeTab() {
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
       <div className="page-head">
-        <p className="eyebrow">Bước 3</p>
+        <p className="eyebrow">{role === "business" ? "Bước 2" : "Bước 3"}</p>
         <h1>Tối ưu hóa lịch chạy</h1>
         <p className="page-sub">
           Chọn ngày tối ưu (hôm nay, ngày mai hoặc trong 5 ngày tới); thời tiết được lấy tự động theo

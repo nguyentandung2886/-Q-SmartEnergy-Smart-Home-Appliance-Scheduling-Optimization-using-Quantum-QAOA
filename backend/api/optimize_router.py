@@ -192,6 +192,18 @@ def _business_billing_params(user: Optional[User]) -> Optional[Tuple[str, str]]:
     return profile.business_type, voltage_level
 
 
+def _business_price_profile(profile, business_type: str, voltage_level: str):
+    """BẢN SAO daily_profile với price_per_kwh thay bằng giá TOU theo giờ của biểu giá DOANH
+    NGHIỆP (classify_hour_tou + EVN_BUSINESS_TIERS[business_type][voltage_level]) — để H_cost
+    của QUBO minimize ĐÚNG đại lượng mà calculate_business_bill() tính cho bill_after (Bug #1).
+    Nếu không, QUBO tối ưu nhầm proxy giá bậc thang hộ gia đình và có thể trả nghiệm đắt hơn
+    theo TOU thật (savings âm). Cột solar_kwh giữ nguyên; không mutate profile gốc."""
+    prices = EVN_BUSINESS_TIERS[business_type][voltage_level]
+    profile = profile.copy()
+    profile["price_per_kwh"] = [prices[classify_hour_tou(int(h))] for h in profile["hour"]]
+    return profile
+
+
 def _bill_from_load(load: List[float], solar: List[float], user: Optional[User] = None) -> float:
     """Monthly EVN bill from a daily load profile. Solar self-consumption per hour is
     min(load[h], solar[h]) — only the part of the load NOT covered by rooftop solar is bought
@@ -229,19 +241,43 @@ def _worst_solar_schedule(flexible: List, solar: List[float]) -> dict:
 
 
 def _compute_schedule_bills(flex_after: dict, fixed_hours: dict, appliances: List, profile,
-                            user: Optional[User] = None):
+                            user: Optional[User] = None, true_flexible: Optional[List] = None):
     """bill_before/after and monthly kWh from the actual whole-house schedule. Both bills use
     the SAME fixed-appliance usage, so the savings isolate the value of optimizing flexible
     loads into solar hours; turning appliances off (fewer hours) lowers both bills (real
     consumption drops). `user` picks the tariff: business accounts are billed through the
     EVN business TOU tariff, everyone else through the household tiers (_bill_from_load).
+
+    `true_flexible`: the appliances that are flexible BY CATALOG, before `pinned_schedule`
+    (drag-and-drop on the Gantt) coerces some of them to is_flexible=False for this one run
+    (see optimize()'s pinned-schedule block). Defaults to `[a for a in appliances if
+    a.is_flexible]` when not given (matches recompute-bill, which never pins).
+
+    Bug fixed here: previously `flexible` was derived from `appliances` directly, so a pinned
+    appliance dropped out of `_worst_solar_schedule` (the 'before' baseline) and its 'before'
+    hour fell back to `usage_windows()` — which, for appliances outside the household
+    DEFAULT_USAGE_WINDOWS catalog (e.g. business/production equipment), defaults to an 18:00
+    (peak/"cao_diem", the most expensive TOU tier) window. That inflated bill_before with a
+    baseline unrelated to where the user actually dragged the block, producing a fake
+    savings% every time a flexible load got pinned. Fix: always compute the 'before' baseline
+    over the TRUE flexible set (their real candidate_hours), and treat those appliances as
+    flexible for load_before too — regardless of whether this run pinned them.
     Returns (bill_before, bill_after, savings_percent, monthly_kwh)."""
     solar = [float(s) for s in profile["solar_kwh"]]
-    flexible = [a for a in appliances if a.is_flexible]
+    flexible = true_flexible if true_flexible is not None else [a for a in appliances if a.is_flexible]
     flex_before = _worst_solar_schedule(flexible, solar)
 
+    # For the 'before' load only: force is_flexible=True on originally-flexible appliances so
+    # _hourly_load reads their hour from flex_before (worst-solar) instead of falling through
+    # to a fixed catalog usage window that has nothing to do with their real candidate_hours.
+    true_flexible_names = {a.name for a in flexible}
+    appliances_for_before = [
+        replace(a, is_flexible=True) if a.name in true_flexible_names else a
+        for a in appliances
+    ]
+
     load_after = _hourly_load(flex_after, fixed_hours, appliances)
-    load_before = _hourly_load(flex_before, fixed_hours, appliances)
+    load_before = _hourly_load(flex_before, fixed_hours, appliances_for_before)
     bill_after = _bill_from_load(load_after, solar, user)
     bill_before = _bill_from_load(load_before, solar, user)
     monthly_kwh = sum(load_after) * 30.0
@@ -260,6 +296,23 @@ def _default_fixed_hours(appliances: List) -> dict:
             hours.extend((start + k) % 24 for k in range(length))
         result[app.name] = sorted(set(hours))
     return result
+
+
+def _fixed_load_w_by_hour(appliances: List[Appliance]) -> Dict[int, float]:
+    """Tổng công suất tức thời (W) của các tải CỐ ĐỊNH đang bật tại mỗi giờ 0-23, lấy giờ bật
+    từ usage_windows (khớp cách _default_fixed_hours xác định giờ tải cố định). Đưa vào H_power
+    của QUBO để ngưỡng quá tải tính cả tải nền cố định (đèn/điều hòa/motor... đang bật), không
+    chỉ cặp thiết bị linh hoạt (Bug #5). Bỏ qua thiết bị linh hoạt (chúng là biến quyết định)."""
+    load = {h: 0.0 for h in range(24)}
+    for app in appliances:
+        if app.is_flexible:
+            continue
+        on_hours = set()
+        for start, length in usage_windows(app):
+            on_hours.update((start + k) % 24 for k in range(length))
+        for h in on_hours:
+            load[h] += app.power_w
+    return load
 
 
 def _coerce_unoptimizable_to_fixed(appliances: List[Appliance]) -> List[Appliance]:
@@ -317,6 +370,12 @@ def optimize(
             for a in user_appliances
         ]
 
+    # Snapshot the TRUE flexible set (real is_flexible/candidate_hours) BEFORE pinned_schedule
+    # below coerces some of them to fixed for this run — the 'before' baseline must always be
+    # computed against real candidate_hours, not the post-pin appliance list (see
+    # _compute_schedule_bills docstring for the bug this avoids).
+    true_flexible_appliances, _true_fixed_appliances = split_by_flexibility(user_appliances)
+
     # --- pinned_schedule: validate hours then override flexibility for this run only ---
     pinned = payload.pinned_schedule or {}
     if pinned:
@@ -347,7 +406,7 @@ def optimize(
     else:
         pinned_to_apply = {}
 
-    flexible, _fixed = split_by_flexibility(user_appliances)
+    flexible, fixed = split_by_flexibility(user_appliances)
 
     # Tổng kWh thật của user quyết định bậc giá biên trong QUBO (H_cost), không dùng catalog
     # mặc định MONTHLY_KWH — bug #4.
@@ -356,8 +415,17 @@ def optimize(
         payload.day_of_month, weather_condition=payload.weather_condition,
         monthly_kwh=user_monthly_kwh_estimate,
     )
+    # Business: đổi price_per_kwh của QUBO sang giá TOU doanh nghiệp để H_cost khớp bill_after
+    # (Bug #1). Household giữ nguyên giá bậc thang (_business_billing_params trả None).
+    business = _business_billing_params(current_user)
+    if business is not None:
+        profile = _business_price_profile(profile, *business)
     power_threshold_w = _power_threshold_for_user(current_user)
-    scheduler = QuantumScheduler(flexible, profile, power_threshold_w=power_threshold_w)
+    # Tải nền cố định (W) theo giờ để H_power cộng dồn khi xét ngưỡng quá tải (Bug #5).
+    fixed_load_w = _fixed_load_w_by_hour(fixed)
+    scheduler = QuantumScheduler(
+        flexible, profile, power_threshold_w=power_threshold_w, fixed_load_w=fixed_load_w
+    )
     # TẠI SAO mặc định QAOA: bài lập lịch thiết bị là tối ưu tổ hợp (combinatorial). Brute-force
     # duyệt toàn bộ 2^n tổ hợp -> đúng tuyệt đối nhưng bùng nổ theo cấp số mũ, không scale khi
     # số biến (thiết bị × giờ ứng viên) tăng. QAOA cho lời giải GẦN ĐÚNG với chi phí thấp hơn
@@ -381,7 +449,8 @@ def optimize(
     # value of optimizing into solar; using fewer hours lowers real consumption and both bills.
     default_fixed_hours = _default_fixed_hours(user_appliances)
     bill_before, bill_after, savings_percent, user_monthly_kwh = _compute_schedule_bills(
-        result.schedule, default_fixed_hours, user_appliances, profile, current_user
+        result.schedule, default_fixed_hours, user_appliances, profile, current_user,
+        true_flexible=true_flexible_appliances,
     )
 
     # Fixed appliances' realistic usage windows for the Gantt (flexible ones are already in

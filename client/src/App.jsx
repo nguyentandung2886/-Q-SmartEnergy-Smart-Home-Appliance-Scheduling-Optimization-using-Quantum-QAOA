@@ -51,6 +51,29 @@ function RequireAdmin({ children }) {
   return role === "admin" ? children : <Navigate to="/app/dashboard" replace />;
 }
 
+// Gate for the forecast feature. Role is verified against the backend (GET /auth/me), the
+// trusted source of truth — never the client-controlled session metadata. Duration forecasting
+// only covers the 3 household flexible appliances, so business accounts are redirected away
+// (and the backend also returns 403 on /forecast for them). Admin is treated like household.
+function RequireHousehold({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+  const [role, setRole] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    getMe()
+      .then((me) => setRole(me.role))
+      .catch(() => setFailed(true));
+  }, [isAuthenticated]);
+
+  if (loading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (failed) return <Navigate to="/app/dashboard" replace />;
+  if (!role) return null; // still resolving role
+  return role === "business" ? <Navigate to="/app/dashboard" replace /> : children;
+}
+
 // Post-login/registration landing. Role is fetched from the backend (GET /auth/me) —
 // the trusted source of truth — never from the client-controlled session metadata.
 function PostAuthRedirect() {
@@ -87,7 +110,7 @@ function App() {
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<InsightsTab />} />
               <Route path="devices" element={<DevicesTab />} />
-              <Route path="forecast" element={<ForecastTab />} />
+              <Route path="forecast" element={<RequireHousehold><ForecastTab /></RequireHousehold>} />
               <Route path="optimize" element={<OptimizeTab />} />
               <Route path="guide" element={<GuideTab />} />
               <Route path="feedback" element={<FeedbackTab />} />
