@@ -34,6 +34,17 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }
 
+  async function loginWithGoogle() {
+    // Redirect back to /dashboard, which routes by role after the session lands.
+    // If the Google provider isn't enabled in Supabase, this returns an error
+    // (no redirect happens) — the caller surfaces it to the user.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (error) throw error;
+  }
+
   async function logout() {
     // Local scope: always clears the client session (no server round-trip that
     // can 403 on an already-expired/deleted session).
@@ -42,7 +53,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, isAuthenticated: !!session, loading, login, register, logout }}
+      value={{ session, isAuthenticated: !!session, loading, login, loginWithGoogle, register, logout }}
     >
       {children}
     </AuthContext.Provider>

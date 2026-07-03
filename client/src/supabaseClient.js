@@ -13,4 +13,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // Detect the session in the URL after an OAuth redirect (e.g. Google login).
+    // This is the supabase-js default; set explicitly so the callback handling is
+    // obvious. onAuthStateChange in AuthContext picks up the resulting session.
+    detectSessionInUrl: true,
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+});
