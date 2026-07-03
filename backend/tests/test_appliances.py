@@ -89,6 +89,49 @@ def test_update_appliance_rejects_out_of_range_candidate_hour(client, auth_heade
     assert update.status_code == 422
 
 
+def test_create_appliance_with_group_name(client, auth_headers):
+    """group_name round-trips on create — used only to group multi-window fixed appliances in the UI."""
+    headers = auth_headers("groupcreate")
+    response = client.post(
+        "/appliances",
+        json={"name": "Bình nóng lạnh — Khung 1", "power_w": 2000, "duration_hours": 0.5,
+              "candidate_hours": [7, 8, 9], "is_flexible": True, "group_name": "Bình nóng lạnh"},
+        headers=headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["group_name"] == "Bình nóng lạnh"
+
+
+def test_create_appliance_group_name_defaults_null(client, auth_headers):
+    """Omitting group_name leaves it null (single-window / legacy appliances stay ungrouped)."""
+    headers = auth_headers("groupdefault")
+    response = client.post(
+        "/appliances",
+        json={"name": "Solo", "power_w": 100, "duration_hours": 1,
+              "candidate_hours": [7], "is_flexible": True},
+        headers=headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["group_name"] is None
+
+
+def test_update_appliance_group_name(client, auth_headers):
+    headers = auth_headers("groupupdate")
+    aid = client.post(
+        "/appliances",
+        json={"name": "G", "power_w": 100, "duration_hours": 1, "candidate_hours": [], "is_flexible": True},
+        headers=headers,
+    ).json()["id"]
+    update = client.put(
+        f"/appliances/{aid}",
+        json={"name": "G", "power_w": 100, "duration_hours": 1, "candidate_hours": [],
+              "is_flexible": True, "group_name": "Nhóm A"},
+        headers=headers,
+    )
+    assert update.status_code == 200
+    assert update.json()["group_name"] == "Nhóm A"
+
+
 def test_cannot_touch_other_users_appliance(client, auth_headers):
     headers_a = auth_headers("usera")
     headers_b = auth_headers("userb")

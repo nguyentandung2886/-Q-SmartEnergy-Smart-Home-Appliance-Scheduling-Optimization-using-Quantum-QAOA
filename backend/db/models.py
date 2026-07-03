@@ -66,6 +66,7 @@ class ApplianceModel(Base):
     quantity = Column(Integer, nullable=False, default=1)
     candidate_hours = Column(JSON, nullable=False, default=list)
     is_flexible = Column(Boolean, nullable=False, default=True)
+    group_name = Column(String(100), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="appliances")

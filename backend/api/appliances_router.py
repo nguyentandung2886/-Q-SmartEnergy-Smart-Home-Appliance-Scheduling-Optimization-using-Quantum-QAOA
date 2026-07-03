@@ -1,5 +1,5 @@
 """Appliance CRUD endpoints. All routes require valid JWT (see auth.get_current_user)."""
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -19,6 +19,7 @@ class ApplianceIn(BaseModel):
     quantity: int = Field(1, ge=1)
     candidate_hours: List[int] = []
     is_flexible: bool = True
+    group_name: Optional[str] = None
 
     @field_validator("candidate_hours")
     @classmethod
@@ -39,6 +40,7 @@ class ApplianceOut(BaseModel):
     quantity: int
     candidate_hours: List[int]
     is_flexible: bool
+    group_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -49,6 +51,7 @@ def _to_out(row: ApplianceModel) -> ApplianceOut:
         id=row.id, name=row.name, power_w=row.power_w, duration_hours=row.duration_hours,
         quantity=row.quantity if row.quantity else 1,
         candidate_hours=hours, is_flexible=row.is_flexible,
+        group_name=row.group_name,
     )
 
 
@@ -79,6 +82,7 @@ def create_appliance(
         quantity=payload.quantity,
         candidate_hours=list(payload.candidate_hours),
         is_flexible=payload.is_flexible,
+        group_name=payload.group_name,
     )
     db.add(row)
     db.commit()
@@ -100,6 +104,7 @@ def update_appliance(
     row.quantity = payload.quantity
     row.candidate_hours = list(payload.candidate_hours)
     row.is_flexible = payload.is_flexible
+    row.group_name = payload.group_name
     db.commit()
     db.refresh(row)
     return _to_out(row)

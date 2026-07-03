@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS appliances (
     quantity        INTEGER NOT NULL DEFAULT 1,
     candidate_hours JSON NOT NULL DEFAULT '[]',
     is_flexible     BOOLEAN NOT NULL DEFAULT true,
+    group_name      VARCHAR(100),
     created_at      TIMESTAMP DEFAULT now()
 );
 
