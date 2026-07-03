@@ -1,11 +1,12 @@
 """Feedback endpoints.
 
-Most routes require valid JWT (see auth.get_current_user): any logged-in user may
-submit feedback and read every user's feedback — the project has no admin role yet,
-so the feedback list is shared across all authenticated users.
+Authenticated routes (valid JWT, see auth.get_current_user): a logged-in user may
+submit feedback (POST /feedback) and read back ONLY their own (GET /feedback/me).
+There is no route that returns every user's feedback to any logged-in user — that
+shared feed leaked other users' display names (B-M1), so it was removed.
 
-The one exception is GET /feedback/public, which serves the landing page's
-testimonials to logged-out visitors and never exposes user_id/email.
+GET /feedback/public is the one unauthenticated route: it serves the landing page's
+admin-curated (is_featured) testimonials and never exposes user_id/email.
 """
 from datetime import datetime
 from typing import List
@@ -69,15 +70,6 @@ class PublicFeedbackOut(BaseModel):
     message: str
     customer_name: str
     created_at: datetime
-
-
-@router.get("", response_model=List[FeedbackOut])
-def list_feedback(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return (
-        db.query(FeedbackModel)
-        .order_by(FeedbackModel.created_at.desc(), FeedbackModel.id.desc())
-        .all()
-    )
 
 
 @router.get("/me", response_model=List[FeedbackOut])

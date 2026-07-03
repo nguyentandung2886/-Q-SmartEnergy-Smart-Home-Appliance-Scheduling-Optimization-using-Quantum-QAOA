@@ -70,8 +70,9 @@ def solve_classical_bruteforce(Q: np.ndarray) -> Tuple[str, float]:
 
 def solve_greedy(Q: np.ndarray, var_map: Dict[int, Tuple[str, int]]) -> str:
     """Thuật toán Tham lam (Greedy) siêu tốc (0.01s) để tìm một bitstring 'tạm ổn' hợp lệ.
-    Dùng để làm Initial State (Warm-Start) cho QAOA thay vì khởi tạo ngẫu nhiên.
-    Nhóm theo thiết bị, chọn giờ có chi phí tuyến tính + chi phí bậc hai (với các thiết bị 
+    Dùng để GIEO initial state cho QAOA (greedy-seeded initial state) thay vì khởi tạo ngẫu
+    nhiên — KHÔNG phải warm-start QAOA chuẩn theo Egger et al. (xem solve_qaoa).
+    Nhóm theo thiết bị, chọn giờ có chi phí tuyến tính + chi phí bậc hai (với các thiết bị
     đã chọn trước đó) thấp nhất.
     """
     n = Q.shape[0]
@@ -109,11 +110,16 @@ def solve_qaoa(
     shots: int = 1024,
     optimizer: str = "COBYLA",
     backend=None,
-) -> Tuple[str, float]:
+    with_distribution: bool = False,
+):
     """Giải QUBO bằng QAOA trên Aer Simulator (recipe đã verify cho bộ version này).
 
     Bọc mọi lỗi gốc từ qiskit/numpy trong QAOAExecutionError để caller fallback
     classical — KHÔNG để traceback thô lộ ra giữa demo.
+
+    Trả về (bitstring, energy) mặc định. Nếu with_distribution=True trả thêm phần tử thứ 3:
+    dict {bitstring: xác suất đo được} gộp từ result.samples — để caller đo XÁC SUẤT đo trúng
+    một bitstring cụ thể (vd nghiệm tối ưu), không chỉ nghiệm tốt nhất mà solver chọn ra.
 
     Tham số cấu hình QAOA:
       - reps (số layer p): p càng lớn ansatz càng biểu diễn tốt nhưng tối ưu càng khó/chậm.
@@ -122,6 +128,7 @@ def solve_qaoa(
       - optimizer: "COBYLA" (mặc định, gradient-free, ổn định cho ít qubit) hoặc "SPSA"
         (nhiễu tốt hơn khi mạch/đo có noise, hợp bài lớn hơn).
       - backend: mặc định AerSimulator(); truyền backend khác để đổi target mà không sửa hàm.
+      - with_distribution: trả thêm phân phối đo (xem trên).
 
     TRADE-OFF (giữ trung thực, xem thêm QuantumScheduler.solve): trên simulator, với số biến
     lớn (>20-25 qubit) QAOA mới thực sự có lợi so với brute-force; ở quy mô PoC 4-5 qubit hiện
@@ -165,7 +172,10 @@ def solve_qaoa(
         sampler = SamplerV2(default_shots=shots)
         classical_optimizer = SPSA(maxiter=maxiter) if optimizer.upper() == "SPSA" else COBYLA(maxiter=maxiter)
 
-        # Warm-Start QAOA using greedy bitstring as initial_state
+        # Greedy-seeded initial state: khởi tạo mạch ở bitstring greedy (cổng X) thay vì |+>^n
+        # mặc định, giúp COBYLA/SPSA xuất phát gần một nghiệm khả thi. LƯU Ý: đây KHÔNG phải
+        # warm-start QAOA chuẩn theo Egger et al. (cần cổng RY tỉ lệ + mixer tương thích) — chỉ
+        # là initial state gieo bằng nghiệm greedy.
         initial_state = None
         if initial_bitstring and len(initial_bitstring) == n:
             from qiskit import QuantumCircuit
@@ -179,6 +189,12 @@ def solve_qaoa(
         result = solver.solve(qp)
 
         bitstring = "".join(str(int(v)) for v in result.x)
+        if with_distribution:
+            distribution: Dict[str, float] = {}
+            for sample in getattr(result, "samples", None) or []:
+                key = "".join(str(int(v)) for v in sample.x)
+                distribution[key] = distribution.get(key, 0.0) + float(sample.probability)
+            return bitstring, float(result.fval), distribution
         return bitstring, float(result.fval)
     except Exception as exc:  # noqa: BLE001 - bọc mọi lỗi để fallback an toàn
         raise QAOAExecutionError(f"QAOA execution failed: {exc}") from exc
@@ -204,21 +220,29 @@ def compare_qaoa_hyperparameters(
     Returns:
         List[dict], mỗi dict có các khóa: "reps", "maxiter", "bitstring", "energy",
         "runtime_seconds", "matches_global_optimum" (so với solve_classical_bruteforce(Q)),
-        "error" (None nếu chạy thành công, ngược lại str mô tả lỗi). Nếu 1 cấu hình QAOA
-        lỗi, dict đó có bitstring/energy/matches_global_optimum = None/None/False và
+        "optimum_probability" (tỉ lệ shots đo TRÚNG bitstring tối ưu, 0..1), "error" (None nếu
+        chạy thành công, ngược lại str mô tả lỗi). Nếu 1 cấu hình QAOA lỗi, dict đó có
+        bitstring/energy/matches_global_optimum/optimum_probability = None/None/False/None và
         "error" chứa thông báo — KHÔNG để exception lan ra ngoài (không crash khi hiển thị
         phân tích này trong demo).
+
+    TẠI SAO thêm optimum_probability: với 4-6 qubit (16-64 trạng thái) và 1024 shots, solver gần
+    như luôn "nhặt" được nghiệm tối ưu trong đống mẫu -> matches_global_optimum=True kể cả với
+    cấu hình tệ, không phân biệt được config tốt/xấu. Xác suất ĐO TRÚNG nghiệm tối ưu (khối lượng
+    xác suất solver dồn vào đúng bitstring đó) mới là thước đo phân biệt được chất lượng QAOA.
     """
     if configs is None:
         configs = [(1, 25), (1, 50), (2, 50), (3, 100)]
 
-    _, optimal_energy = solve_classical_bruteforce(Q)
+    optimal_bitstring, optimal_energy = solve_classical_bruteforce(Q)
 
     results: List[Dict[str, object]] = []
     for reps, maxiter in configs:
         start = time.perf_counter()
         try:
-            bitstring, energy = solve_qaoa(Q, reps=reps, maxiter=maxiter, seed=seed)
+            bitstring, energy, distribution = solve_qaoa(
+                Q, reps=reps, maxiter=maxiter, seed=seed, with_distribution=True
+            )
             runtime = time.perf_counter() - start
             results.append({
                 "reps": reps,
@@ -227,6 +251,7 @@ def compare_qaoa_hyperparameters(
                 "energy": energy,
                 "runtime_seconds": runtime,
                 "matches_global_optimum": abs(energy - optimal_energy) < 1e-6,
+                "optimum_probability": distribution.get(optimal_bitstring, 0.0),
                 "error": None,
             })
         except QAOAExecutionError as exc:
@@ -237,6 +262,7 @@ def compare_qaoa_hyperparameters(
                 "energy": None,
                 "runtime_seconds": time.perf_counter() - start,
                 "matches_global_optimum": False,
+                "optimum_probability": None,
                 "error": str(exc),
             })
     return results
@@ -354,10 +380,13 @@ class QuantumScheduler:
         # nhưng dưới-tối-ưu). Ở quy mô PoC (2^n nhỏ) brute-force chạy tức thời và cho global
         # optimum chắc chắn, nên luôn đối chiếu: nếu brute-force tốt hơn thực sự thì dùng nó
         # -> lịch giao ra luôn là nghiệm tiết kiệm nhất, không nhận nghiệm QAOA dưới-tối-ưu.
-        bf_bitstring, bf_energy = solve_classical_bruteforce(self.Q)
-        if bf_energy < energy - 1e-6:
-            runtime = time.perf_counter() - start
-            return self._build_result(bf_bitstring, bf_energy, "classical_bruteforce", True, runtime)
+        # BỎ bước đối chiếu khi n_vars > 20: 2^n tổ hợp bùng nổ sẽ treo worker (bug #A3) —
+        # đúng vùng số biến mà QAOA mới thực sự có lợi, cứ nhận nghiệm QAOA hợp lệ.
+        if self.Q.shape[0] <= 20:
+            bf_bitstring, bf_energy = solve_classical_bruteforce(self.Q)
+            if bf_energy < energy - 1e-6:
+                runtime = time.perf_counter() - start
+                return self._build_result(bf_bitstring, bf_energy, "classical_bruteforce", True, runtime)
 
         runtime = time.perf_counter() - start
         return self._build_result(bitstring, energy, "qaoa", False, runtime)

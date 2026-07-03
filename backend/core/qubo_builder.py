@@ -138,6 +138,13 @@ def build_qubo(
     tách biệt vì mỗi số hạng là 1 trục giá trị trong pitch: H_cost = "tránh nhảy bậc
     giá", H_solar = "tối đa hóa self-consumption".
 
+    GIỚI HẠN của H_cost/H_solar (khai báo rõ, song song với giới hạn của H_power ở dưới): định
+    giá TOÀN BỘ năng lượng E_i theo đúng GIỜ BẮT ĐẦU h_{i,k}, kể cả thiết bị chạy nhiều giờ.
+    Vd máy giặt 2h bắt đầu 11h tính P(11h)·E_i cho cả 2 giờ, KHÔNG trải P(11h)+P(12h). Chấp nhận
+    được với giá bậc thang hộ gia đình (P(h) gần như phẳng trong ngày, phụ thuộc lũy kế tháng chứ
+    không theo giờ); với biểu giá TOU doanh nghiệp thì đây là XẤP XỈ theo giờ bắt đầu — cùng độ
+    phân giải giờ-bắt-đầu như H_power.
+
     fixed_load_w: dict {giờ 0-23: tổng công suất (W) tải NỀN CỐ ĐỊNH đang bật tại giờ đó}.
     None = coi như không có tải nền (mọi giờ 0W) — giữ nguyên hành vi cũ cho caller không
     truyền. Caller (api.optimize_router) tính từ fixed appliances qua usage_windows.
@@ -201,8 +208,12 @@ def build_qubo(
     # TẠI SAO penalty bậc hai (quadratic) + cách chọn λ:
     #   Cost/reward term cỡ vài nghìn → vài chục nghìn đồng (1 thiết bị × vài kWh × giá
     #   biên tối đa 3.967đ/kWh — Bậc 5, QĐ 1279/QĐ-BCT). λ1/λ2 mặc định 1.000.000đ — lớn hơn cost term ~100-1000
-    #   lần để optimizer KHÔNG BAO GIỜ đánh đổi vi phạm ràng buộc lấy cost thấp hơn
-    #   (λ quá nhỏ → nghiệm vi phạm one-hot/quá tải lại có H thấp hơn → sai). Nhưng KHÔNG
+    #   lần VỚI THIẾT BỊ CỠ CATALOG/DEMO nên optimizer không đánh đổi vi phạm ràng buộc lấy cost
+    #   thấp hơn (λ quá nhỏ → nghiệm vi phạm one-hot/quá tải lại có H thấp hơn → sai). LƯU Ý: điều
+    #   này KHÔNG đảm bảo với MỌI input — power_w/quantity hiện không có trần trên, nên một thiết
+    #   bị đủ lớn (vd 15kW × quantity 5 × 24h ≈ 360 kWh → cost term ≳ 1e6) có thể sánh ngang λ và
+    #   khiến vi phạm one-hot "được mua lại"; API chặn trường hợp này bằng HTTP 422 thay vì trả
+    #   lịch sai. Nhưng KHÔNG
     #   chọn λ quá lớn (vd >10^9): hệ số QUBO quá chênh lệch làm Hamiltonian QAOA khó tối
     #   ưu (landscape góc beta/gamma dốc, optimizer dễ kẹt ở nghiệm an toàn nhưng tệ).
     #   1e6 đặt khoảng cách an toàn ~vài trăm nghìn giữa nghiệm hợp lệ và vi phạm mà vẫn

@@ -45,6 +45,11 @@ def _expected_bills_pinned_at(pin_hour: int):
     monthly = {"binh_thuong": 0.0, "thap_diem": 0.0, "cao_diem": 0.0}
     for h in range(24):
         monthly[tou(h)] += grid[h] * 30.0
+    # QĐ 963: Chủ nhật không có cao điểm — ~4/30 phần cao điểm tính giá bình thường (khớp
+    # _load_by_tou_period trong optimize_router).
+    sunday_peak = monthly["cao_diem"] * (4.0 / 30.0)
+    monthly["cao_diem"] -= sunday_peak
+    monthly["binh_thuong"] += sunday_peak
     business = sum(monthly[p] * _PROD_DUOI_6KV[p] for p in monthly) * 1.08
     household = calc.calculate_bill(sum(grid) * 30.0)
     return business, household
@@ -62,10 +67,12 @@ def _optimize_pinned(client, uid: str):
 def test_load_by_tou_period_groups_and_scales_to_month():
     load = [1.0] * 24  # 1 kWh mỗi giờ
     monthly = _load_by_tou_period(load)
+    # QĐ 963: Chủ nhật không có cao điểm -> 4/30 phần cao điểm (5*30=150) chuyển sang bình thường.
+    sunday_peak = 5 * 30.0 * (4.0 / 30.0)  # = 20
     assert monthly == {
-        "thap_diem": pytest.approx(6 * 30.0),    # giờ 0-5
-        "cao_diem": pytest.approx(5 * 30.0),     # giờ 18-22
-        "binh_thuong": pytest.approx(13 * 30.0), # còn lại
+        "thap_diem": pytest.approx(6 * 30.0),                  # giờ 0-5, không đổi
+        "cao_diem": pytest.approx(5 * 30.0 - sunday_peak),     # giờ 18-22, trừ phần Chủ nhật
+        "binh_thuong": pytest.approx(13 * 30.0 + sunday_peak), # còn lại + phần Chủ nhật
     }
 
 

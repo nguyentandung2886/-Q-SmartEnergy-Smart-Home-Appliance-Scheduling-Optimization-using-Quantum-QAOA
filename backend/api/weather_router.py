@@ -1,8 +1,11 @@
 import os
 import httpx
 import statistics
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+
+from auth import get_current_user
+from db.models import User
 
 router = APIRouter(prefix="/weather", tags=["weather"])
 
@@ -68,7 +71,12 @@ async def fetch_weather_forecast(lat: float, lon: float, days_ahead: int = 0) ->
 
 
 @router.post("")
-async def get_live_weather(payload: WeatherRequest):
+async def get_live_weather(
+    payload: WeatherRequest,
+    current_user: User = Depends(get_current_user),
+):
+    # Yêu cầu đăng nhập: endpoint gọi OpenWeatherMap (API trả phí, tốn quota key) nên không để
+    # public — tránh bị gọi ẩn danh làm cạn quota (B-M2).
     condition, forecast_available = await fetch_weather_forecast(
         payload.lat, payload.lon, payload.days_ahead
     )

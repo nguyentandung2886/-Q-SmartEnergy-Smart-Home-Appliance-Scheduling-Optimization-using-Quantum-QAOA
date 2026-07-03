@@ -154,15 +154,28 @@ H = H_cost + H_solar + λ1·H_onehot + λ2·H_power
 H_cost   =  Σ_{i,k} x_{i,k} · E_i · P(h_{i,k})                     # pay the tier price for the energy
 H_solar  = -Σ_{i,k} x_{i,k} · min(E_i, S(h_{i,k})) · P(h_{i,k})    # credit back solar-covered kWh
 H_onehot =  Σ_i ( Σ_k x_{i,k} − 1 )²                              # each appliance runs exactly once
-H_power  =  Σ over conflicting pairs  x_{i,k} · x_{i',k'}          # forbid simultaneous over-threshold draw
+H_power  =  Σ_{(i,k): power_i + F(h) > P_max} x_{i,k}                              # one load + fixed background already over threshold
+         +  Σ_{(i,k),(i',k'): i≠i', h=h', power_i+power_i'+F(h) > P_max} x_{i,k}·x_{i',k'}   # two flexible loads sharing an hour over threshold
 ```
 
 where `E_i` = power·duration (kWh), `P(h)` = marginal EVN tier price at hour `h`,
-`S(h)` = solar kWh at `h`. Per variable, `H_cost + H_solar = E_i·P − min(E_i,S)·P
-= max(0, E_i − S)·P` — only the **non-solar** part of the load is billed.
-`λ1 = λ2 = 1e6` (≈100–1000× the cost terms): large enough that a constraint
-violation can never be "bought back" by a cheaper schedule, yet small enough to
-keep the QAOA cost landscape trainable.
+`S(h)` = solar kWh at `h`, `F(h)` = fixed background load (W) already ON at hour
+`h`, `P_max` = the power threshold. Per variable, `H_cost + H_solar = E_i·P −
+min(E_i,S)·P = max(0, E_i − S)·P` — only the **non-solar** part of the load is
+billed. **H_cost/H_solar price the whole run at its START hour** `h_{i,k}`: a
+2-hour wash started at 11:00 is billed at `P(11:00)` for both hours, not
+`P(11:00)+P(12:00)`. Safe for the household staircase tariff (`P(h)` is flat
+across the day, set by the monthly cumulative total), and a start-hour
+approximation for the business TOU tariff — the same start-hour resolution
+`H_power` uses.
+`λ1 = λ2 = 1e6` (≈100–1000× the cost terms **for demo/catalog-scale
+appliances**): large enough that, at those appliance sizes, a constraint
+violation is not "bought back" by a cheaper schedule, yet small enough to keep
+the QAOA cost landscape trainable. This is **not guaranteed for arbitrary
+inputs** — `power_w`/`quantity` carry no upper bound, so a large enough appliance
+(e.g. 15 kW × qty 5 × 24 h ≈ 360 kWh → a single cost term ≳ 1e6) can rival λ and
+let the "run exactly once" constraint be violated. The API guards this case by
+returning HTTP 422 rather than emitting a wrong schedule.
 
 The two value axes can pull apart: when solar at an hour is strong, the optimizer
 may pick an hour with a *higher* marginal tier price because the solar credit

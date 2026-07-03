@@ -104,11 +104,6 @@ export async function submitFeedback(payload) {
   return data;
 }
 
-export async function getFeedback() {
-  const { data } = await apiClient.get("/feedback");
-  return data;
-}
-
 // Public testimonials for the landing page (no auth required).
 export async function getPublicFeedback() {
   const { data } = await apiClient.get("/feedback/public");
@@ -147,7 +142,7 @@ export async function getAdminLogs({ limit = 50, offset = 0 } = {}) {
 export async function explainSchedule(payload) {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  return fetch(`${API_BASE_URL}/explain`, {
+  const response = await fetch(`${API_BASE_URL}/explain`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -155,6 +150,10 @@ export async function explainSchedule(payload) {
     },
     body: JSON.stringify(payload),
   });
+  // 401/500 trả về Response với ok=false nhưng KHÔNG throw — nếu đọc stream ngay thì lỗi bị nuốt
+  // im lặng (giống như chưa bấm). Ném lỗi để caller hiện thông báo rõ ràng.
+  if (!response.ok) throw new Error(`Explain request failed: ${response.status}`);
+  return response;
 }
 
 // Fetch weather from backend for a given day offset (0 = today, 1 = tomorrow, …).

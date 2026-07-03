@@ -32,6 +32,7 @@ export default function OptimizeTab() {
   const {
     weather, weatherLoading, loading, error, runOptimize,
     result, reoptimizing, fixedHours, appliances, handlePinnedChange, handleFixedHoursChange,
+    durationOverrides, clearDurationOverrides,
     analysis, analyzing, handleAnalyze, explainText, explainLoading, handleExplain,
     todayISO, tomorrowISO, maxDateISO, selectedDate, changeDate, forecastAvailable,
   } = useAppData();
@@ -96,6 +97,12 @@ export default function OptimizeTab() {
             {loading ? "Đang tối ưu…" : "Tối ưu hóa"}
           </button>
         </div>
+        {Object.keys(durationOverrides).length > 0 && (
+          <div className="ml-override">
+            <span>⚙️ Đang tối ưu với <strong>thời lượng dự báo (ML)</strong> cho {Object.keys(durationOverrides).length} thiết bị, thay cho thời lượng thật.</span>
+            <button className="btn" onClick={clearDurationOverrides} disabled={loading}>Gỡ</button>
+          </div>
+        )}
         {showAssumedSunny && (
           <div className="safety" style={{ background: "var(--pale-yellow-bg)", color: "var(--pale-yellow-fg)", borderColor: "transparent" }}>
             ⚠️ Chưa có dữ liệu thời tiết chính xác cho ngày {ddmm(selectedDate)} (quá xa so với dự báo).
@@ -115,6 +122,7 @@ export default function OptimizeTab() {
               <div className="bill-figure">
                 <span className="bill-num">{fmt(result.bill_before_vnd)}đ</span>
                 <span className="bill-label">Hóa đơn trước</span>
+                <span className="bill-note">= chạy tải linh hoạt vào giờ bất lợi nhất trong khung cho phép</span>
               </div>
               <span className="bill-arrow">→</span>
               <div className="bill-figure">

@@ -8,15 +8,16 @@ import base64
 import io
 import json
 import logging
+import math
 import os
 from dataclasses import replace
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Literal, NamedTuple, Optional, Tuple
 
 import matplotlib
 matplotlib.use("Agg")  # headless, thread-safe backend for rendering charts in request handlers
 import matplotlib.pyplot as plt
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from core import calc
@@ -69,6 +70,18 @@ def _power_threshold_for_user(user: User) -> float:
     return contracted_w
 
 
+def _validate_duration_overrides(v: Optional[Dict[str, float]]) -> Optional[Dict[str, float]]:
+    """Mỗi thời lượng override phải là số HỮU HẠN trong (0, 24]. Không validate thì Pydantic
+    ép chuỗi "inf"/"nan" thành float inf/nan, khiến vòng lặp `while remaining > 1e-9` trong
+    _hourly_load không bao giờ dừng -> treo worker bằng 1 request (bug #A4)."""
+    if v is None:
+        return v
+    for name, dur in v.items():
+        if not (math.isfinite(dur) and 0 < dur <= 24):
+            raise ValueError(f"duration_overrides['{name}']={dur} phải là số hữu hạn trong (0, 24]")
+    return v
+
+
 class OptimizeRequest(BaseModel):
     day_of_month: int = Field(9, ge=1, le=30)
     weather_condition: Literal["sunny", "cloudy", "rainy"] = "sunny"
@@ -77,6 +90,11 @@ class OptimizeRequest(BaseModel):
     # ML-forecasted run durations (giờ) per appliance name, from /forecast. Override the
     # catalog duration_hours before building the QUBO so the classical ML layer feeds QAOA.
     duration_overrides: Optional[Dict[str, float]] = None
+
+    @field_validator("duration_overrides")
+    @classmethod
+    def _check_durations(cls, v):
+        return _validate_duration_overrides(v)
 
 
 class _ScheduleBase(BaseModel):
@@ -104,6 +122,10 @@ class ScheduleOut(_ScheduleBase):
     # Each appliance may run in SEVERAL disjoint windows (e.g. fan at noon + evening), not one block.
     # Flexible appliances aren't here — they live in `schedule` at their single optimized hour.
     fixed_windows: Dict[str, List[List[int]]]
+    # Số biến nhị phân (qubit) của QUBO đã build cho run này = số giờ ứng viên trên các thiết bị
+    # linh hoạt (sau coerce/pin). Lấy từ cùng scheduler _prepare_run dựng — khớp num_variables của
+    # /qaoa-analysis cho cùng input. Không lưu DB nên lịch sử (ScheduleHistoryOut) không có trường này.
+    num_variables: int
 
 
 class ScheduleHistoryOut(_ScheduleBase):
@@ -161,10 +183,19 @@ def _hourly_load(flex_schedule: dict, fixed_hours: dict, appliances: List) -> Li
 def _load_by_tou_period(load: List[float]) -> Dict[str, float]:
     """Gộp 24 giá trị kWh/giờ trong MỘT NGÀY thành tổng kWh/THÁNG theo 3 khung giờ TOU
     (classify_hour_tou), nhân 30 ngày — nhất quán với cách _bill_from_load nhân 30 cho
-    hộ gia đình."""
+    hộ gia đình.
+
+    QĐ 963/QĐ-BCT: CHỦ NHẬT không có giờ cao điểm — phần điện rơi vào khung cao điểm của các
+    Chủ nhật được tính theo giá BÌNH THƯỜNG. Xấp xỉ ~4 Chủ nhật/tháng (thực tế 4-5): chuyển
+    4/30 lượng kWh cao điểm sang bình thường, giữ 26/30 còn lại ở cao điểm cho các ngày thường.
+    Không tách được từng Chủ nhật cụ thể vì load ở đây là 1 ngày điển hình nhân 30, nên dùng tỉ
+    lệ 4/30 làm xấp xỉ (trước đây tính mọi ngày như ngày thường -> cao điểm thừa ~14%)."""
     monthly = {"binh_thuong": 0.0, "thap_diem": 0.0, "cao_diem": 0.0}
     for hour, kwh in enumerate(load):
         monthly[classify_hour_tou(hour)] += kwh * 30.0
+    sunday_peak = monthly["cao_diem"] * (4.0 / 30.0)
+    monthly["cao_diem"] -= sunday_peak
+    monthly["binh_thuong"] += sunday_peak
     return monthly
 
 
@@ -348,12 +379,26 @@ def _db_rows_to_appliances(rows: List[ApplianceModel]) -> List[Appliance]:
     return result
 
 
-@router.post("/optimize", response_model=ScheduleOut)
-def optimize(
-    payload: OptimizeRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+class _PreparedRun(NamedTuple):
+    """Đầu vào QUBO đã dựng sẵn từ request + danh sách thiết bị của user. /optimize và
+    /qaoa-analysis dùng CHUNG _prepare_run để đảm bảo cùng num_variables/energy (C7)."""
+    user_appliances: List[Appliance]      # sau coerce + overrides + pin
+    true_flexible: List[Appliance]        # snapshot TRƯỚC khi pin (cho baseline 'before')
+    flexible: List[Appliance]
+    fixed: List[Appliance]
+    pinned_to_apply: Dict[str, int]
+    profile: object                       # daily_profile DataFrame (đã đổi giá TOU nếu business)
+    power_threshold_w: float
+    fixed_load_w: Dict[int, float]
+    scheduler: QuantumScheduler
+
+
+def _prepare_run(payload: OptimizeRequest, current_user: User, db: Session) -> _PreparedRun:
+    """Dựng QUBO/scheduler từ thiết bị của user + request theo ĐÚNG luồng /optimize dùng, để
+    /qaoa-analysis báo cáo cùng num_variables/energy như run thật (C7). Áp dụng: coerce thiết
+    bị không tối ưu được thành fixed, duration_overrides, pinned_schedule (validate + coerce
+    fixed), profile giá theo user (TOU doanh nghiệp vs bậc thang hộ gia đình), ngưỡng công suất
+    + tải nền cố định, và guard n_vars>20 (422)."""
     rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
     user_appliances = _coerce_unoptimizable_to_fixed(_db_rows_to_appliances(rows))
 
@@ -376,13 +421,15 @@ def optimize(
 
     # --- pinned_schedule: validate hours then override flexibility for this run only ---
     pinned = payload.pinned_schedule or {}
+    pinned_to_apply: Dict[str, int] = {}
     if pinned:
         user_app_map = {a.name: a for a in user_appliances}
-        pinned_to_apply = {}
         for pinned_name, hour in pinned.items():
             app = user_app_map.get(pinned_name)
             if app is None:
                 continue  # silently ignore appliances not in user's list
+            if not (0 <= hour <= 23):
+                raise HTTPException(status_code=422, detail=f"'{pinned_name}': hour {hour} phải trong 0-23")
             if app.candidate_hours and hour not in app.candidate_hours:
                 raise HTTPException(
                     status_code=422,
@@ -401,8 +448,6 @@ def optimize(
             else a
             for a in user_appliances
         ]
-    else:
-        pinned_to_apply = {}
 
     flexible, fixed = split_by_flexibility(user_appliances)
 
@@ -424,6 +469,43 @@ def optimize(
     scheduler = QuantumScheduler(
         flexible, profile, power_threshold_w=power_threshold_w, fixed_load_w=fixed_load_w
     )
+    # Chặn brute-force 2^n bùng nổ: > 20 biến (n_vars) là quá lớn cho fallback cổ điển
+    # (2^21 tổ hợp) và sẽ treo worker vô hạn (bug #A3). Trả 422 rõ ràng ngay thay vì để chạy.
+    n_vars = scheduler.Q.shape[0]
+    if n_vars > 20:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Quá nhiều biến tối ưu ({n_vars} > 20). Giảm số thiết bị linh hoạt hoặc số giờ ứng viên.",
+        )
+    return _PreparedRun(
+        user_appliances=user_appliances,
+        true_flexible=true_flexible_appliances,
+        flexible=flexible,
+        fixed=fixed,
+        pinned_to_apply=pinned_to_apply,
+        profile=profile,
+        power_threshold_w=power_threshold_w,
+        fixed_load_w=fixed_load_w,
+        scheduler=scheduler,
+    )
+
+
+@router.post("/optimize", response_model=ScheduleOut)
+def optimize(
+    payload: OptimizeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    prep = _prepare_run(payload, current_user, db)
+    user_appliances = prep.user_appliances
+    true_flexible_appliances = prep.true_flexible
+    flexible = prep.flexible
+    pinned_to_apply = prep.pinned_to_apply
+    profile = prep.profile
+    power_threshold_w = prep.power_threshold_w
+    fixed_load_w = prep.fixed_load_w
+    scheduler = prep.scheduler
+
     # TẠI SAO mặc định QAOA: bài lập lịch thiết bị là tối ưu tổ hợp (combinatorial). Brute-force
     # duyệt toàn bộ 2^n tổ hợp -> đúng tuyệt đối nhưng bùng nổ theo cấp số mũ, không scale khi
     # số biến (thiết bị × giờ ứng viên) tăng. QAOA cho lời giải GẦN ĐÚNG với chi phí thấp hơn
@@ -434,7 +516,24 @@ def optimize(
     # và lấy nghiệm đó nếu tốt hơn. QAOA ở đây là để chứng minh pipeline lượng tử, chưa phải
     # thắng về hiệu năng — lợi thế QAOA chỉ xuất hiện khi số biến lớn (>20-25 qubit).
     use_quantum = payload.use_quantum and _qaoa_is_default()
-    result = scheduler.solve(use_quantum=use_quantum)
+    try:
+        result = scheduler.solve(use_quantum=use_quantum)
+    except ValueError:
+        # decode_schedule raise ValueError khi nghiệm tối ưu vi phạm one-hot: xảy ra khi một
+        # thiết bị linh hoạt vượt ngưỡng công suất tại MỌI giờ ứng viên (tắt thiết bị lại rẻ
+        # hơn theo H_power) -> không có lịch hợp lệ. Trả 422 rõ ràng thay vì để lỗi thành 500.
+        overloaded = [
+            a.name for a in flexible
+            if a.candidate_hours and all(
+                a.power_w + fixed_load_w.get(h, 0.0) > power_threshold_w
+                for h in a.candidate_hours
+            )
+        ]
+        names = ", ".join(overloaded) if overloaded else "một thiết bị"
+        raise HTTPException(
+            status_code=422,
+            detail=f"Thiết bị {names} vượt ngưỡng công suất tại mọi giờ ứng viên.",
+        )
 
     # Merge pinned entries back — QAOA only ran on remaining flexible appliances
     for name, hour in pinned_to_apply.items():
@@ -493,6 +592,7 @@ def optimize(
         bill_before_vnd=bill_before, bill_after_vnd=bill_after,
         savings_percent=savings_percent, gantt_chart_png=gantt_png, bill_chart_png=bill_png,
         fixed_windows=fixed_windows, power_threshold_w=power_threshold_w,
+        num_variables=scheduler.Q.shape[0],
     )
 
 
@@ -502,6 +602,11 @@ class RecomputeBillRequest(BaseModel):
     schedule: Dict[str, int] = {}          # flexible appliance name -> chosen hour
     fixed_hours: Dict[str, List[int]] = {}  # fixed appliance name -> list of ON hours
     duration_overrides: Optional[Dict[str, float]] = None
+
+    @field_validator("duration_overrides")
+    @classmethod
+    def _check_durations(cls, v):
+        return _validate_duration_overrides(v)
 
 
 class BillOut(BaseModel):
@@ -564,6 +669,9 @@ class QaoaConfigResult(BaseModel):
     energy: Optional[float]
     runtime_seconds: float
     matches_global_optimum: bool
+    # Xác suất đo trúng bitstring tối ưu trên 1024 shots (0..1); None nếu config đó lỗi. Phân
+    # biệt được chất lượng QAOA khi matches_global_optimum gần như luôn True ở quy mô ít qubit.
+    optimum_probability: Optional[float]
     error: Optional[str]
 
 
@@ -583,16 +691,12 @@ def qaoa_analysis(
     """Run QAOA across several (reps, maxiter) configs on the user's flexible-appliance QUBO and
     compare each against the classical brute-force optimum. Surfaces the hyperparameter-tuning
     evidence (III.3) in the web demo: qubit count, runtime, and whether each config reached the
-    global optimum. On-demand because it runs QAOA several times."""
-    rows = db.query(ApplianceModel).filter(ApplianceModel.user_id == current_user.id).all()
-    user_appliances = _db_rows_to_appliances(rows)
-    flexible, _fixed = split_by_flexibility(user_appliances)
-
-    profile = data_prep.build_daily_profile(
-        payload.day_of_month, weather_condition=payload.weather_condition,
-        monthly_kwh=_estimate_user_monthly_kwh(user_appliances),
-    )
-    scheduler = QuantumScheduler(flexible, profile)
+    global optimum. On-demand because it runs QAOA several times. Dựng QUBO qua _prepare_run —
+    CÙNG luồng với /optimize (coerce/overrides/pinned/business TOU/threshold/fixed_load) — nên
+    num_variables và brute_force_energy khớp với run /optimize thật cho cùng input (C7)."""
+    prep = _prepare_run(payload, current_user, db)
+    scheduler = prep.scheduler
+    flexible = prep.flexible
     n = scheduler.Q.shape[0]
 
     if n == 0:
@@ -604,7 +708,8 @@ def qaoa_analysis(
         QaoaConfigResult(
             reps=r["reps"], maxiter=r["maxiter"], energy=r["energy"],
             runtime_seconds=round(r["runtime_seconds"], 3),
-            matches_global_optimum=r["matches_global_optimum"], error=r["error"],
+            matches_global_optimum=r["matches_global_optimum"],
+            optimum_probability=r["optimum_probability"], error=r["error"],
         )
         for r in raw
     ]

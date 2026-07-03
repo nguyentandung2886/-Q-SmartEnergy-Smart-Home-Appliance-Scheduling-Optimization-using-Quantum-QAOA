@@ -29,8 +29,8 @@ export default function GuideTab() {
             </>
           ) : (
             <>
-              Bốn bước để tối ưu hóa lịch dùng điện với Q-SmartEnergy: khai báo thiết bị, xem dự báo,
-              chạy tối ưu và đọc kết quả. Làm theo đúng thứ tự các tab bên dưới.
+              Bốn bước để tối ưu hóa lịch dùng điện với Q-SmartEnergy: khai báo thiết bị, dự báo thời
+              lượng chạy, chạy tối ưu và đọc kết quả. Làm theo đúng thứ tự các tab bên dưới.
             </>
           )}
         </p>
@@ -69,9 +69,10 @@ export default function GuideTab() {
               <span className="tag">Tab Dự báo</span>
             </div>
             <p>
-              Xem dự báo thời tiết theo vị trí của bạn cho hôm nay và các ngày tới. Thời tiết (nắng,
-              nhiều mây, mưa) quyết định lượng điện mặt trời tự sản xuất, và ảnh hưởng đến cách thuật
-              toán xếp các tải linh hoạt vào khung giờ có nắng.
+              Với mỗi thiết bị linh hoạt, nhập các đặc trưng công việc (ví dụ chương trình giặt,
+              khối lượng…). Mô hình hồi quy tuyến tính cổ điển sẽ dự báo <strong>thời lượng chạy</strong>
+              (số giờ) của thiết bị, kèm sai số <strong>MAE</strong>. Bấm <strong>Chạy mô hình dự báo</strong>;
+              thời lượng dự báo này được tự động áp dụng khi bạn chạy Tối ưu hóa.
             </p>
           </div>
         )}

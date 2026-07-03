@@ -8,10 +8,14 @@ const WEATHER_LABELS = { sunny: "Nắng", cloudy: "Có mây", rainy: "Mưa" };
 export default function History() {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    getSchedules().then(setSchedules).finally(() => setLoading(false));
+    getSchedules()
+      .then(setSchedules)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -31,6 +35,10 @@ export default function History() {
 
       {loading ? (
         <p className="hint" style={{ textAlign: "center", marginTop: "2rem" }}>Đang tải…</p>
+      ) : error ? (
+        <div className="card empty-state">
+          <p>Không tải được lịch sử. Vui lòng thử lại.</p>
+        </div>
       ) : schedules.length === 0 ? (
         <div className="card empty-state">
           <p>Chưa có lần tối ưu nào.</p>

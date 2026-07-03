@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from api.alerts import send_email_alert, send_sms_alert
+from auth import get_current_user
+from db.models import User
 
 router = APIRouter(prefix="/api/alert", tags=["alert"])
 
@@ -13,7 +15,7 @@ class AlertRequest(BaseModel):
     savings_percent: float
 
 @router.post("/")
-def trigger_alert(req: AlertRequest):
+def trigger_alert(req: AlertRequest, current_user: User = Depends(get_current_user)):
     results = {}
     
     if req.email:

@@ -126,7 +126,7 @@ input, select, textarea { font-family: var(--sans); }
 /* ── Appliance table ────────────────────────────────────── */
 table { width: 100%; border-collapse: separate; border-spacing: 0; }
 th, td { text-align: left; padding: 0.7rem 0.75rem; font-size: 0.92rem; }
-th { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 500; }
+th { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 500; }
 td { border-bottom: 1px solid var(--border); }
 tr:last-child td { border-bottom: none; }
 td input { width: 92px; }
@@ -153,9 +153,18 @@ td input { width: 92px; }
 .bill-num { font-family: var(--serif); font-size: 1.8rem; color: var(--text-strong); letter-spacing: -0.02em; }
 .bill-num--accent { color: var(--accent); }
 .bill-num--save { color: var(--pale-green-fg); }
-.bill-label { font-size: 0.78rem; color: var(--text-muted); }
+.bill-label { font-size: 0.8rem; color: var(--text-muted); }
+.bill-note { font-size: 0.72rem; color: var(--text-muted); max-width: 15rem; line-height: 1.35; }
 .bill-arrow { color: var(--text-muted); font-size: 1.4rem; }
 .bill-solver { margin-left: auto; }
+
+/* Badge cảnh báo đang optimize với thời lượng dự báo (ML) thay vì thời lượng thật. */
+.ml-override {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  margin-top: 1rem; padding: 0.6rem 0.9rem; border-radius: var(--radius-sm);
+  background: var(--pale-yellow-bg); color: var(--pale-yellow-fg); font-size: 0.85rem;
+}
+.ml-override button { margin-left: auto; }
 
 /* ── Safety / QAOA ──────────────────────────────────────── */
 .safety { margin-top: 1rem; padding: 0.6rem 0.9rem; border-radius: var(--radius-sm); font-size: 0.85rem; border: 1px solid var(--border); }
@@ -201,29 +210,29 @@ td input { width: 92px; }
 .gantt-disabled { opacity: 0.55; pointer-events: none; }
 .gantt-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); min-height: 34px; }
 .gantt-row:last-child { border-bottom: none; }
-.gantt-header-row { font-family: var(--mono); font-size: 0.62rem; color: var(--text-muted); background: var(--surface-2); }
+.gantt-header-row { font-family: var(--mono); font-size: 0.75rem; color: var(--text-muted); background: var(--surface-2); }
 .gantt-label { width: 150px; min-width: 150px; padding: 0 0.6rem; font-size: 0.78rem; display: flex; align-items: center; gap: 5px; border-right: 1px solid var(--border); white-space: nowrap; overflow: hidden; color: var(--text); }
 .gantt-flex-badge { color: var(--accent); font-size: 0.7rem; }
 .gantt-track { flex: 1; display: grid; grid-template-columns: repeat(24, 1fr); position: relative; align-items: stretch; }
 .gantt-header-cell { text-align: center; padding: 5px 0 3px; grid-row: 1; border-right: 1px solid var(--border); }
 .gantt-cell { grid-row: 1; border-right: 1px solid var(--border); transition: background 0.1s; z-index: 1; }
-.gantt-cell-valid { background: var(--accent-soft); }
+.gantt-cell-valid { background: color-mix(in srgb, var(--accent) 70%, transparent); }
 .gantt-cell-hover { background: var(--accent-soft) !important; outline: 1px dashed var(--accent); outline-offset: -1px; }
 .gantt-cell-clickable { cursor: pointer; }
 .gantt-cell-clickable:hover { background: var(--surface-2); }
-.gantt-cell-on { background: color-mix(in srgb, var(--accent) 55%, transparent); }
-.gantt-cell-on:hover { background: color-mix(in srgb, var(--accent) 70%, transparent); }
+.gantt-cell-on { background: color-mix(in srgb, var(--accent) 88%, transparent); }
+.gantt-cell-on:hover { background: var(--accent); }
 .gantt-block { grid-row: 1; border-radius: 4px; margin: 4px 1px; z-index: 2; cursor: grab; transition: opacity 0.15s, box-shadow 0.2s; }
 .gantt-block-flex { background: var(--accent); opacity: 0.9; }
 .gantt-block-flex:hover { opacity: 1; box-shadow: var(--shadow-hover); }
 .gantt-block-dragging { opacity: 0.35; }
 /* Bóng mờ vị trí cũ + nhấn mạnh khối vừa dịch: cho thấy rõ trước/sau khi kéo trên cùng một hàng. */
-.gantt-block-ghost { background: transparent; border: 1.5px dashed var(--text-muted); opacity: 0.6; z-index: 1; cursor: default; pointer-events: none; }
+.gantt-block-ghost { background: transparent; border: 2px dashed var(--text-muted); opacity: 0.6; z-index: 1; cursor: default; pointer-events: none; }
 .gantt-block-moved { box-shadow: 0 0 0 2px var(--accent), var(--shadow-hover); }
 .gantt-legend { display: flex; gap: 1.25rem; margin-top: 0.6rem; font-size: 0.8rem; color: var(--text-muted); }
 .gantt-legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
 .gantt-swatch { width: 14px; height: 10px; border-radius: 3px; display: inline-block; }
-.gantt-swatch-ghost { background: transparent; border: 1.5px dashed var(--text-muted); }
+.gantt-swatch-ghost { background: transparent; border: 2px dashed var(--text-muted); }
 .gantt-swatch-now { background: var(--accent); }
 
 /* ── Auth pages ─────────────────────────────────────────── */
@@ -260,6 +269,11 @@ td input { width: 92px; }
   --quantum: #2dd4bf;
   --energy: #8fca93;
   --glass-border: rgba(255, 255, 255, 0.10);
+  --error: #ef4444;
+  --neon-cyan: #06b6d4;
+  --neon-emerald: #10b981;
+  --neon-purple: #a855f7;
+  --quantum-glow: rgba(45, 212, 191, 0.55);
 }
 .hero-section { padding: 7rem 2rem 4rem; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .landing-title { font-family: var(--serif); font-size: clamp(2.6rem, 6vw, 4.2rem); font-weight: 600; letter-spacing: -0.03em; color: var(--text-strong); margin-bottom: 1.25rem; max-width: 16ch; }

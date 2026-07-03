@@ -25,11 +25,15 @@ class ApplianceIn(BaseModel):
     @classmethod
     def _candidate_hours_in_day_range(cls, v: List[int]) -> List[int]:
         """Mỗi giờ ứng viên phải trong 0-23 — giờ ngoài khoảng làm /optimize trả 500 (build_qubo
-        không tra được giá tại giờ đó) thay vì lỗi validate rõ ràng (bug #7)."""
+        không tra được giá tại giờ đó) thay vì lỗi validate rõ ràng (bug #7). Bỏ trùng (giữ thứ
+        tự) và giới hạn tối đa 6 giờ/thiết bị để n_vars của QUBO không bùng nổ (bug #A3)."""
         for h in v:
             if not (0 <= h <= 23):
                 raise ValueError(f"candidate_hours chứa giờ ngoài 0-23: {h}")
-        return v
+        deduped = list(dict.fromkeys(v))  # bỏ trùng, giữ thứ tự xuất hiện
+        if len(deduped) > 6:
+            raise ValueError(f"candidate_hours tối đa 6 giờ ứng viên (nhận {len(deduped)})")
+        return deduped
 
 
 class ApplianceOut(BaseModel):

@@ -80,13 +80,12 @@ export default function GanttEditor({
     setPointerOff(false);
     if (!draggingName || rowName !== draggingName) return;
     if (!isValidHour(draggingName, hour)) return;
-    const newSchedule = { ...localSchedule, [draggingName]: hour };
+    const draggedName = draggingName;
+    const newSchedule = { ...localSchedule, [draggedName]: hour };
     setLocalSchedule(newSchedule);
     setDraggingName(null);
-    const pinned = Object.fromEntries(
-      Object.entries(newSchedule).filter(([n]) => getApp(n)?.is_flexible)
-    );
-    onPinnedChange(pinned);
+    // Pin CHỈ thiết bị vừa được kéo-thả; các tải linh hoạt khác vẫn để solver tự tối ưu lại.
+    onPinnedChange({ [draggedName]: hour });
   }
 
   function handleDragEnd() {

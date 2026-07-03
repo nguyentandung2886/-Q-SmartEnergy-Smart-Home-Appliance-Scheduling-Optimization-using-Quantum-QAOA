@@ -10,7 +10,7 @@ export default function BillChart({ appliances, result, fixedHours }) {
 
     appliances.forEach(app => {
       const dur = Math.ceil(app.duration_hours);
-      const power = app.power_w;
+      const power = app.power_w * (app.quantity ?? 1); // match backend/AppData: bill counts all units
 
       if (app.is_flexible) {
         // Before: default starts at 18 (Peak hour)
@@ -45,11 +45,18 @@ export default function BillChart({ appliances, result, fixedHours }) {
 
   const pieData = useMemo(() => {
     if (!result) return [];
-    return appliances.map(app => ({
-      name: app.name,
-      value: (app.power_w / 1000) * app.duration_hours * 30, // Monthly kWh
-    })).sort((a, b) => b.value - a.value);
-  }, [appliances, result]);
+    return appliances.map(app => {
+      // Fixed ("theo nhu cầu") appliances are created with duration_hours=1.0; their real daily
+      // run-time is the ON hours the user set (fixedHours) — same basis the backend bills on.
+      const hoursPerDay = app.is_flexible
+        ? app.duration_hours
+        : (fixedHours[app.name]?.length ?? app.duration_hours);
+      return {
+        name: app.name,
+        value: (app.power_w / 1000) * hoursPerDay * 30 * (app.quantity ?? 1), // Monthly kWh
+      };
+    }).sort((a, b) => b.value - a.value);
+  }, [appliances, result, fixedHours]);
 
   const COLORS = ['#06B6D4', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#EF4444', '#6B7280'];
 
@@ -64,25 +71,27 @@ export default function BillChart({ appliances, result, fixedHours }) {
         <div style={{ height: 300, width: "100%" }}>
           <ResponsiveContainer>
             <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              {/* WCAG AA contrast on white bg (min 3:1 for graphical objects):
+                  #B45309≈5.02:1, #0E7490≈5.36:1, axis #6b6b6b≈5.33:1 — all pass. */}
               <defs>
                 <linearGradient id="colorBefore" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#F59E0B" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#B45309" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#B45309" stopOpacity={0}/>
                 </linearGradient>
                 <linearGradient id="colorAfter" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#06B6D4" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#06B6D4" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#0E7490" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#0E7490" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <XAxis dataKey="hour" stroke="#9b9b9b" fontSize={11} tickLine={false} />
-              <YAxis stroke="#9b9b9b" fontSize={11} unit="kW" width={44} />
+              <XAxis dataKey="hour" stroke="#6b6b6b" fontSize={11} tickLine={false} />
+              <YAxis stroke="#6b6b6b" fontSize={11} unit="kW" width={44} />
               <CartesianGrid strokeDasharray="3 3" stroke="#9b9b9b" strokeOpacity={0.18} vertical={false} />
               <Tooltip
                 contentStyle={{ background: "#171717", border: "none", borderRadius: "8px", fontSize: "12px" }}
                 itemStyle={{ color: "#fff" }} labelStyle={{ color: "#9b9b9b" }}
               />
-              <Area type="monotone" dataKey="before" name="Trước tối ưu" stroke="#F59E0B" fillOpacity={1} fill="url(#colorBefore)" />
-              <Area type="monotone" dataKey="after" name="Sau tối ưu" stroke="#06B6D4" fillOpacity={1} fill="url(#colorAfter)" />
+              <Area type="monotone" dataKey="before" name="Trước tối ưu" stroke="#B45309" fillOpacity={1} fill="url(#colorBefore)" />
+              <Area type="monotone" dataKey="after" name="Sau tối ưu" stroke="#0E7490" fillOpacity={1} fill="url(#colorAfter)" />
               <Legend verticalAlign="top" height={36}/>
             </AreaChart>
           </ResponsiveContainer>

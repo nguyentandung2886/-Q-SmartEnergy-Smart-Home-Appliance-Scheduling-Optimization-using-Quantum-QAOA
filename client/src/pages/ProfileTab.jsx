@@ -20,10 +20,12 @@ export default function ProfileTab() {
   const [loadingFeedback, setLoadingFeedback] = useState(true);
 
   useEffect(() => {
-    getMe().then((data) => {
-      setMe(data);
-      setUsername(data.username || "");
-    });
+    getMe()
+      .then((data) => {
+        setMe(data);
+        setUsername(data.username || "");
+      })
+      .catch(() => {});
 
     Promise.all([getAppliances(), getSchedules()])
       .then(([appliances, schedules]) => {

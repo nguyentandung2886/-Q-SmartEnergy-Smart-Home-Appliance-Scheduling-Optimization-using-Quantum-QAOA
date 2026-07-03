@@ -275,7 +275,7 @@ export function AppDataProvider({ children }) {
     }
   }
 
-  async function runOptimize(pinned = {}) {
+  async function runOptimize(pinned = {}, overrides = durationOverrides) {
     const isDrag = Object.keys(pinned).length > 0;
     setError("");
     if (isDrag) {
@@ -291,12 +291,16 @@ export function AppDataProvider({ children }) {
         day_of_month: Number(dayOfMonth),
         weather_condition: weather,
         use_quantum: true,
-        ...(Object.keys(durationOverrides).length ? { duration_overrides: durationOverrides } : {}),
+        ...(Object.keys(overrides).length ? { duration_overrides: overrides } : {}),
         ...(isDrag ? { pinned_schedule: pinned } : {}),
       });
       setResult({ ...data, _runId: Date.now(), _forDate: selectedDate });
     } catch {
       setError("Lỗi khi tối ưu hóa. Kiểm tra backend đã chạy chưa?");
+      // Kéo-thả thất bại: GanttEditor đã optimistic dời khối sang chỗ mới. Bơm lại một tham chiếu
+      // schedule mới (cùng giá trị cũ) để effect reset trong GanttEditor chạy lại, đưa khối về đúng
+      // vị trí trước khi kéo thay vì để nó nằm ở chỗ vừa thả.
+      if (isDrag) setResult((prev) => prev && { ...prev, schedule: { ...prev.schedule } });
     } finally {
       setLoading(false);
       setReoptimizing(false);
@@ -308,7 +312,16 @@ export function AppDataProvider({ children }) {
     debounceRef.current = setTimeout(() => runOptimize(newPinned), 400);
   }
 
+  // Gỡ override thời lượng dự báo (ML): xóa forecasts và tối ưu lại với thời lượng thật ngay
+  // lập tức (truyền overrides rỗng vì setForecasts chưa kịp cập nhật closure của runOptimize).
+  function clearDurationOverrides() {
+    setForecasts({});
+    runOptimize({}, {});
+  }
+
   function handleFixedHoursChange(newFixedHours) {
+    const prevFixedHours = fixedHours; // for revert if the recompute request fails
+    setError("");
     setFixedHours(newFixedHours);
     if (billDebounceRef.current) clearTimeout(billDebounceRef.current);
     billDebounceRef.current = setTimeout(async () => {
@@ -329,7 +342,10 @@ export function AppDataProvider({ children }) {
           monthly_kwh: data.monthly_kwh,
         });
       } catch {
-        /* keep previous bill on error */
+        // Không nuốt lỗi: trả các ô giờ về trạng thái trước (GanttEditor đồng bộ lại từ prop
+        // fixedHours) và báo cho người dùng thay vì âm thầm giữ nguyên hóa đơn cũ.
+        setFixedHours(prevFixedHours);
+        setError("Lỗi khi tính lại hóa đơn. Kiểm tra backend đã chạy chưa?");
       }
     }, 400);
   }
@@ -379,15 +395,24 @@ export function AppDataProvider({ children }) {
         }
       }
     } catch {
-      setExplainText("Không thể kết nối Gemini. Vui lòng thử lại.");
+      // Đứt giữa chừng: đã đọc được một phần text → NỐI THÊM dấu gián đoạn, không ghi đè mất phần
+      // đang đọc. Lỗi ngay từ đầu (401/500, chưa có text) → hiện thông báo rõ ràng.
+      setExplainText((prev) =>
+        prev ? `${prev} …[Kết nối gián đoạn]` : "Không thể kết nối Gemini. Vui lòng thử lại."
+      );
     } finally {
       setExplainLoading(false);
     }
   }
 
-  const totalKwh = appliances.reduce(
-    (sum, a) => sum + (a.power_w / 1000) * a.duration_hours * 30 * (a.quantity ?? 1), 0
-  );
+  const totalKwh = appliances.reduce((sum, a) => {
+    // On-demand (is_flexible=false) devices carry a placeholder duration_hours=1.0; their real
+    // daily run-time is the ON hours the user set (fixedHours) — same basis BillChart's pie uses.
+    const hoursPerDay = a.is_flexible
+      ? a.duration_hours
+      : (fixedHours[a.name]?.length ?? a.duration_hours);
+    return sum + (a.power_w / 1000) * hoursPerDay * 30 * (a.quantity ?? 1);
+  }, 0);
 
   const value = {
     appliances, totalKwh, handleSave, handleDelete, handleAdd,
@@ -397,6 +422,7 @@ export function AppDataProvider({ children }) {
     result, loading, reoptimizing, error, runOptimize,
     forecastInputs, setForecastField, forecasts, forecasting, handleForecast,
     fixedHours, handlePinnedChange, handleFixedHoursChange,
+    durationOverrides, clearDurationOverrides,
     analysis, analyzing, handleAnalyze,
     explainText, explainLoading, handleExplain,
     notifications, markAllRead, clearNotifications,

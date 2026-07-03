@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { getFeedback, submitFeedback } from "../api";
+import { getPublicFeedback, submitFeedback } from "../api";
 
 export default function FeedbackTab() {
   const [rating, setRating] = useState(5);
@@ -11,7 +11,7 @@ export default function FeedbackTab() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    getFeedback().then(setItems).finally(() => setLoading(false));
+    getPublicFeedback().then(setItems).catch(() => setItems([])).finally(() => setLoading(false));
   }, []);
 
   async function handleSubmit(e) {
@@ -37,8 +37,8 @@ export default function FeedbackTab() {
         <p className="eyebrow">Cộng đồng</p>
         <h1>Góp ý & đánh giá</h1>
         <p className="page-sub">
-          Chia sẻ nhận xét, đánh giá hoặc đề xuất của bạn về Q-SmartEnergy. Tất cả góp ý được hiển
-          thị công khai cho người dùng đã đăng nhập.
+          Chia sẻ nhận xét, đánh giá hoặc đề xuất của bạn về Q-SmartEnergy. Các góp ý nổi bật được
+          chọn hiển thị công khai.
         </p>
       </div>
 
@@ -107,8 +107,8 @@ export default function FeedbackTab() {
         </div>
       ) : (
         <div className="bento">
-          {items.map((f) => (
-            <div key={f.id} className="card">
+          {items.map((f, i) => (
+            <div key={f.id ?? i} className="card">
               <div className="card-head">
                 <span aria-label={`${f.rating} sao`} style={{ color: "var(--accent)", letterSpacing: "1px" }}>
                   {"★".repeat(f.rating)}
