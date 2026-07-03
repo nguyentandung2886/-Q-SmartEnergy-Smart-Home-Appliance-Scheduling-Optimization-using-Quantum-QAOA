@@ -5,10 +5,14 @@ Bug #2: pinned/coerced appliances (is_flexible forced to False) were billed at t
 usage_windows() fallback hour (18h) instead of the hour actually present in
 flex_schedule — pinning to a sunny vs dark hour produced identical bills.
 
-Bug #3: fixed-branch appliances that fall into the usage_windows() fallback window
-(names absent from DEFAULT_USAGE_WINDOWS) were billed ceil(duration_hours) full
-hours, inflating kWh for fractional durations. Catalog appliances with real usage
-patterns in DEFAULT_USAGE_WINDOWS keep their behavior (pattern != duration).
+Bug #3 (reversed on purpose): fixed-branch appliances absent from
+DEFAULT_USAGE_WINDOWS are now billed one FULL hour per ON hour — the hours the
+user toggled on the Gantt (or the usage_windows() fallback window before any
+toggle) — no longer capped at duration_hours. Every toggled hour counts toward
+the bill; the trade-off is that the INITIAL estimate (before any toggle) rounds
+up to the ceil(duration)-wide fallback window instead of the exact fractional
+duration. Catalog appliances in DEFAULT_USAGE_WINDOWS keep their behavior
+(pattern != duration).
 """
 import pytest
 
@@ -45,16 +49,17 @@ def test_different_pinned_hours_produce_different_loads():
     assert load_for(7) != load_for(13)
 
 
-# ---------- Bug #3: fallback-window fixed appliance billed true duration ----------
+# ---------- Bug #3 reversed: every ON hour of a fallback fixed appliance bills full ----------
 
-def test_fallback_fixed_appliance_bills_exact_fractional_duration():
+def test_fallback_fixed_appliance_bills_every_on_hour_in_full():
     """An unknown fixed appliance with duration 1.5h falls into the usage_windows()
-    fallback (18h, ceil(1.5)=2 hours). Its daily energy must be 1kW * 1.5h = 1.5 kWh,
-    not 2.0 kWh from the rounded-up display window."""
+    fallback (18h, ceil(1.5)=2 hours). Each ON hour bills a full hour regardless of
+    duration_hours, so its daily energy is 1kW * 2h = 2.0 kWh — the deliberate
+    trade-off for "every Gantt-toggled hour counts"."""
     app = Appliance(name="Thiết bị lạ", power_w=1000, duration_hours=1.5,
                     candidate_hours=(), is_flexible=False)
     load = _hourly_load({}, _default_fixed_hours([app]), [app])
-    assert sum(load) == pytest.approx(1000 / 1000.0 * 1.5)
+    assert sum(load) == pytest.approx(2.0)
 
 
 def test_catalog_fixed_appliance_keeps_usage_window_billing():

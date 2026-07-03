@@ -148,15 +148,13 @@ def _hourly_load(flex_schedule: dict, fixed_hours: dict, appliances: List) -> Li
             for hour_on in fixed_hours.get(app.name, []):
                 load[int(hour_on) % 24] += eff_kw
         else:
-            # Unknown fixed appliance: its hours come from usage_windows()'s fallback,
-            # a ceil(duration)-wide DISPLAY window. Bill the true duration_hours spread
-            # across those hours, or fractional durations get rounded up into extra kWh.
-            remaining = app.duration_hours
-            for hour_on in sorted(fixed_hours.get(app.name, [])):
-                if remaining <= 1e-9:
-                    break
-                load[int(hour_on) % 24] += eff_kw * min(1.0, remaining)
-                remaining -= 1.0
+            # Unknown fixed appliance: every ON hour (user-toggled on the Gantt, or the
+            # usage_windows() fallback before any toggle) is a full hour of use, same as
+            # catalog appliances above. duration_hours no longer caps billing here — it
+            # only sizes the initial ceil(duration) display window. Kept as a separate
+            # branch from the catalog case on purpose.
+            for hour_on in fixed_hours.get(app.name, []):
+                load[int(hour_on) % 24] += eff_kw
     return load
 
 

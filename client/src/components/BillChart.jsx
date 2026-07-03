@@ -59,7 +59,7 @@ export default function BillChart({ appliances, result, fixedHours }) {
       <div className="card">
         <div className="card-head"><h3>Tải điện theo giờ (24h)</h3></div>
         <p className="hint" style={{ marginTop: 0, marginBottom: "1rem" }}>
-          Hiệu quả san phẳng đỉnh tải. Đường cam là nếp dùng cũ (dồn vào buổi tối); đường teal là sau tối ưu.
+          Hiệu quả san phẳng đỉnh tải. Đường cam là kịch bản <strong>minh họa</strong> — giả định tải linh hoạt dồn vào giờ cao điểm 18h để thấy rủi ro quá tải, KHÔNG phải baseline dùng tính hóa đơn (xem số tiền thực tế ở mục Tối ưu); đường teal là sau tối ưu.
         </p>
         <div style={{ height: 300, width: "100%" }}>
           <ResponsiveContainer>

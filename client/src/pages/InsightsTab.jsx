@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -11,20 +10,6 @@ const AXIS = "#9b9b9b";
 
 export default function InsightsTab() {
   const { result, appliances, fixedHours } = useAppData();
-
-  const esg = useMemo(() => {
-    let shifted = 0;
-    if (result) {
-      appliances.forEach((a) => {
-        if (a.is_flexible) {
-          const h = result.schedule[a.name];
-          if (h !== 17 && h !== 18 && h !== 19) shifted += (a.power_w / 1000) * a.duration_hours * 30;
-        }
-      });
-    }
-    const co2 = shifted * 0.8;
-    return { kwhShifted: shifted, co2Reduced: co2, treesPlanted: co2 / 22 };
-  }, [appliances, result]);
 
   if (!result) {
     return (
@@ -51,7 +36,6 @@ export default function InsightsTab() {
     { label: "Hóa đơn sau tối ưu", value: `${fmt(result.bill_after_vnd)}đ`, tone: "green" },
     { label: "Tiết kiệm", value: `${result.savings_percent?.toFixed(1)}%`, tone: "blue" },
     { label: "Tiêu thụ tháng", value: `${fmt(result.monthly_kwh ?? 0)} kWh`, tone: "" },
-    { label: "CO₂ giảm / tháng", value: `${esg.co2Reduced.toFixed(0)} kg`, tone: "yellow" },
   ];
 
   return (
@@ -88,13 +72,6 @@ export default function InsightsTab() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-        <div className="card esg-card">
-          <div className="card-head"><h3>Tác động môi trường (ESG)</h3></div>
-          <div className="esg-row"><span>Điện dời khỏi giờ cao</span><strong className="mono">{esg.kwhShifted.toFixed(0)} kWh</strong></div>
-          <div className="esg-row"><span>CO₂ giảm mỗi tháng</span><strong className="mono">{esg.co2Reduced.toFixed(0)} kg</strong></div>
-          <div className="esg-row"><span>Tương đương cây xanh</span><strong className="mono">{esg.treesPlanted.toFixed(1)} cây</strong></div>
         </div>
       </div>
 

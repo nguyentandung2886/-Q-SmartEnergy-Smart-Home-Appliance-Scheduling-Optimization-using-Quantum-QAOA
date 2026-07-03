@@ -48,11 +48,11 @@ export default function GuideTab() {
           </p>
           <ul>
             <li>
-              <strong>Linh hoạt · theo nhu cầu</strong>: thiết bị dùng theo thói quen (đèn, TV…).
+              <strong>Cố định · theo nhu cầu</strong>: thiết bị dùng theo thói quen (đèn, TV…).
               Bạn nhập công suất (W), số giờ dùng/ngày và số lượng.
             </li>
             <li>
-              <strong>Cố định · tự lên lịch</strong>: thiết bị có thể để hệ thống chọn giờ chạy
+              <strong>Linh hoạt · tự lên lịch</strong>: thiết bị có thể để hệ thống chọn giờ chạy
               (máy giặt, máy bơm, sạc xe…). Bạn nhập công suất, <strong>khung giờ có thể chạy</strong>
               (từ / đến) và <strong>số giờ cần chạy</strong>; hệ thống sẽ tự xếp giờ trong khung đó.
             </li>
