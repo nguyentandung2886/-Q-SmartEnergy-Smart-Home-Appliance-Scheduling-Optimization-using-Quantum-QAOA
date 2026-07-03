@@ -216,7 +216,7 @@ td input { width: 92px; }
 .gantt-track { flex: 1; display: grid; grid-template-columns: repeat(24, 1fr); position: relative; align-items: stretch; }
 .gantt-header-cell { text-align: center; padding: 5px 0 3px; grid-row: 1; border-right: 1px solid var(--border); }
 .gantt-cell { grid-row: 1; border-right: 1px solid var(--border); transition: background 0.1s; z-index: 1; }
-.gantt-cell-valid { background: color-mix(in srgb, var(--accent) 70%, transparent); }
+.gantt-cell-valid { background: color-mix(in srgb, var(--accent) 50%, transparent); }
 .gantt-cell-hover { background: var(--accent-soft) !important; outline: 1px dashed var(--accent); outline-offset: -1px; }
 .gantt-cell-clickable { cursor: pointer; }
 .gantt-cell-clickable:hover { background: var(--surface-2); }
