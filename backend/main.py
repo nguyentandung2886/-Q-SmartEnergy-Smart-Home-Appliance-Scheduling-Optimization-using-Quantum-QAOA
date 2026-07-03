@@ -7,6 +7,7 @@ Imports q-smartenergy modules (calc, appliance_catalog, etc.) via sys.path.
 """
 import os
 import sys
+from contextlib import asynccontextmanager
 
 # Allow importing q-smartenergy pipeline modules directly (calc, appliance_catalog,
 # data_prep, qubo_builder, quantum_runner, visualizer) without installing them as a package.
@@ -17,9 +18,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db.database import Base, engine
 
-Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Q-SmartEnergy API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(title="Q-SmartEnergy API", version="1.0.0", lifespan=lifespan)
 
 _default_origins = "http://localhost:5173,http://localhost:3000"
 _allowed_origins = os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",")
