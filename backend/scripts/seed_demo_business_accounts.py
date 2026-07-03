@@ -50,22 +50,23 @@ _COMMON = {
 }
 
 # Device lists — used verbatim. Tuple = (name, power_w, duration_hours, is_flexible, candidate_hours)
+# (name, power_w, duration_hours, is_flexible, candidate_hours, quantity)
 PRODUCTION_APPLIANCES = [
-    ("Máy nén khí trục vít 7.5HP", 5500, 4, True, [3, 14]),
-    ("Máy hàn hồ quang inverter", 4000, 2, True, [9, 15]),
-    ("Lò sấy công nghiệp", 6000, 3, True, [2, 13]),
-    ("Máy CNC cắt nhỏ", 3000, 3, True, [4, 11]),
-    ("Motor băng chuyền 3 pha", 5500, 8, False, []),
-    ("Đèn nhà xưởng LED", 2000, 10, False, []),
+    ("Máy nén khí trục vít 7.5HP", 5500, 4, True, [3, 14], 2),
+    ("Máy hàn hồ quang inverter", 4000, 2, True, [9, 15], 3),
+    ("Lò sấy công nghiệp", 6000, 3, True, [2, 13], 1),
+    ("Máy CNC cắt nhỏ", 3000, 3, True, [4, 11], 2),
+    ("Motor băng chuyền 3 pha", 5500, 8, False, [], 4),
+    ("Đèn nhà xưởng LED", 2000, 10, False, [], 2),
 ]
 
 COMMERCIAL_APPLIANCES = [
-    ("Điều hòa trung tâm cửa hàng", 3500, 10, False, []),
-    ("Tủ đông/tủ mát trưng bày", 800, 24, False, []),
-    ("Đèn LED biển hiệu + chiếu sáng", 1200, 12, False, []),
-    ("Máy pha cà phê công nghiệp", 2500, 1, True, [5, 6]),
-    ("Máy rửa chén công nghiệp", 3000, 1.5, True, [3, 14]),
-    ("Quạt/hệ thống thông gió", 500, 10, False, []),
+    ("Điều hòa trung tâm cửa hàng", 3500, 10, False, [], 2),
+    ("Tủ đông/tủ mát trưng bày", 800, 24, False, [], 3),
+    ("Đèn LED biển hiệu + chiếu sáng", 1200, 12, False, [], 1),
+    ("Máy pha cà phê công nghiệp", 2500, 1, True, [5, 6], 1),
+    ("Máy rửa chén công nghiệp", 3000, 1.5, True, [3, 14], 2),
+    ("Quạt/hệ thống thông gió", 500, 10, False, [], 5),
 ]
 
 DEMO_ACCOUNTS = [
@@ -241,7 +242,7 @@ def _seed_appliances(api_base: str, token: str, appliances: list) -> tuple[int, 
     existing_names = {a["name"] for a in resp.json()}
 
     added = present = 0
-    for name, power_w, duration_hours, is_flexible, candidate_hours in appliances:
+    for name, power_w, duration_hours, is_flexible, candidate_hours, quantity in appliances:
         if name in existing_names:
             present += 1
             print(f"    - đã tồn tại, bỏ qua: {name}")
@@ -254,12 +255,13 @@ def _seed_appliances(api_base: str, token: str, appliances: list) -> tuple[int, 
                 "duration_hours": duration_hours,
                 "is_flexible": is_flexible,
                 "candidate_hours": candidate_hours,
+                "quantity": quantity,
             },
         )
         if create.status_code != 201:
             sys.exit(f"ERROR: POST /appliances thất bại cho '{name}' ({create.status_code}): {create.text}")
         added += 1
-        print(f"    + đã thêm: {name}")
+        print(f"    + đã thêm: {name} x{quantity}")
     return added, present
 
 
