@@ -231,14 +231,31 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
     setAddedHint(false);
   }
 
+  // Sửa/xóa từ các hàng được gọi fire-and-forget (onBlur/onClick). onSave/onDelete (AppData) trả
+  // false khi API lỗi thay vì reject — bọc lại để hiện thông báo thân thiện trong thẻ này, không
+  // chặn thao tác tiếp theo, và tránh unhandled rejection tràn stack trace.
+  async function handleRowSave(id, payload) {
+    const ok = await onSave(id, payload);
+    if (ok === false) setFixedError("Lỗi khi lưu thay đổi thiết bị. Kiểm tra backend đã chạy chưa?");
+  }
+  async function handleRowDelete(id) {
+    const ok = await onDelete(id);
+    if (ok === false) setFixedError("Lỗi khi xóa thiết bị. Kiểm tra backend đã chạy chưa?");
+  }
+
   async function handleAdd(e) {
     e.preventDefault();
     // duration_hours mặc định 1.0: schema backend vẫn yêu cầu, nhưng giá trị này chỉ
     // ảnh hưởng ước lượng ban đầu — hoá đơn thật tính theo số giờ bấm ON trên Gantt.
-    await onAdd({
+    const ok = await onAdd({
       name: newName, power_w: Number(newPower), duration_hours: 1.0,
       quantity: Number(newQty), candidate_hours: [], is_flexible: false,
     });
+    if (!ok) {
+      setFixedError("Không thể thêm thiết bị. Kiểm tra kết nối mạng / backend rồi thử lại.");
+      return;
+    }
+    setFixedError("");
     setNewName(""); setNewPower(100); setNewQty(1);
   }
 
@@ -258,20 +275,28 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
 
     if (computed.length === 1) {
       // 1 khung: giữ nguyên hành vi cũ — không set group_name (tương thích ngược).
-      await onAdd({
+      const ok = await onAdd({
         name: newName, power_w: Number(newPower), duration_hours: computed[0].duration,
         quantity: Number(newQty), candidate_hours: computed[0].candidate_hours, is_flexible: true,
       });
+      if (!ok) {
+        setFixedError("Không thể thêm thiết bị. Kiểm tra kết nối mạng / backend rồi thử lại.");
+        return;
+      }
     } else {
       // >= 2 khung: mỗi khung là 1 row riêng (distinct name), cùng group_name để UI gom lại.
       // Tạo tuần tự (await từng cái) để thứ tự hiển thị ổn định.
       for (let i = 0; i < computed.length; i++) {
-        await onAdd({
+        const ok = await onAdd({
           name: `${newName} — Khung ${i + 1}`,
           power_w: Number(newPower), duration_hours: computed[i].duration,
           quantity: Number(newQty), candidate_hours: computed[i].candidate_hours,
           is_flexible: true, group_name: newName,
         });
+        if (!ok) {
+          setFixedError("Không thể thêm thiết bị. Kiểm tra kết nối mạng / backend rồi thử lại.");
+          return;
+        }
       }
     }
 
@@ -318,11 +343,11 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
               </td>
             </tr>
           ) : mode === "flex" ? (
-            shown.map((a) => <FlexRow key={a.id} appliance={a} onSave={onSave} onDelete={onDelete} />)
+            shown.map((a) => <FlexRow key={a.id} appliance={a} onSave={handleRowSave} onDelete={handleRowDelete} />)
           ) : (
             fixedGroups.order.map((entry) =>
               entry.type === "single" ? (
-                <FixedRow key={entry.appliance.id} appliance={entry.appliance} onSave={onSave} onDelete={onDelete} />
+                <FixedRow key={entry.appliance.id} appliance={entry.appliance} onSave={handleRowSave} onDelete={handleRowDelete} />
               ) : (
                 <GroupRow
                   key={`group:${entry.name}`}
@@ -330,8 +355,8 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
                   items={fixedGroups.groups.get(entry.name)}
                   expanded={!!expandedGroups[entry.name]}
                   onToggle={() => toggleGroup(entry.name)}
-                  onSave={onSave}
-                  onDelete={onDelete}
+                  onSave={handleRowSave}
+                  onDelete={handleRowDelete}
                 />
               )
             )

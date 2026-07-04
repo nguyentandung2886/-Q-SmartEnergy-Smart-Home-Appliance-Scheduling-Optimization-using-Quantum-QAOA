@@ -255,19 +255,38 @@ export function AppDataProvider({ children }) {
     }
   }
 
+  // CRUD thiết bị: bắt lỗi bên trong và trả true/false (cùng pattern với runOptimize) thay vì để
+  // promise reject tràn ra ngoài. Nhiều nơi gọi các hàm này fire-and-forget (onBlur/onClick của
+  // hàng), nên nếu reject sẽ thành unhandled rejection + stack trace đỏ. UI (ApplianceManager) đọc
+  // giá trị trả về để hiện thông báo thân thiện.
   async function handleSave(id, payload) {
-    await updateAppliance(id, payload);
-    await loadAppliances();
+    try {
+      await updateAppliance(id, payload);
+      await loadAppliances();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function handleDelete(id) {
-    await deleteAppliance(id);
-    await loadAppliances();
+    try {
+      await deleteAppliance(id);
+      await loadAppliances();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function handleAdd(payload) {
-    await createAppliance(payload);
-    await loadAppliances();
+    try {
+      await createAppliance(payload);
+      await loadAppliances();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   const durationOverrides = Object.fromEntries(
