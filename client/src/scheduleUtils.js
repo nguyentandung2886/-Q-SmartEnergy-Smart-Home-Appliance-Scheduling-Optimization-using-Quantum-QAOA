@@ -15,3 +15,27 @@ export function computeCandidateHours(use_start, use_end, need_duration) {
   for (let i = 0; i < validStarts; i++) hours.push((use_start + i) % 24);
   return hours;
 }
+
+// Household default (W) when there's no business profile / contracted power declared.
+// Must match DEFAULT_POWER_THRESHOLD_W in backend/core/qubo_builder.py.
+const DEFAULT_POWER_THRESHOLD_W = 5000;
+
+// Commercial businesses warn earlier than production at the same contracted power.
+// Must match COMMERCIAL_SAFETY_MARGIN in backend/api/optimize_router.py.
+const COMMERCIAL_SAFETY_MARGIN = 0.8;
+
+/**
+ * Mirrors backend's _power_threshold_for_user (api/optimize_router.py) so the client can show
+ * the account's real concurrent-power threshold before an /optimize response exists (e.g. a
+ * rehydrated schedule from history, which doesn't persist power_threshold_w).
+ *
+ * `me` is the GET /auth/me response shape ({ role, business_profile }); null while still loading.
+ */
+export function accountPowerThresholdW(me) {
+  const profile = me?.business_profile;
+  if (me?.role !== "business" || !profile || profile.contracted_power_kw == null) {
+    return DEFAULT_POWER_THRESHOLD_W;
+  }
+  const contractedW = profile.contracted_power_kw * 1000;
+  return profile.business_type === "commercial" ? contractedW * COMMERCIAL_SAFETY_MARGIN : contractedW;
+}

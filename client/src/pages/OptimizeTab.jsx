@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAppData } from "../AppData";
 import { getMe, fetchExternalData } from "../api";
 import { WEATHER_OPTIONS } from "../forecastConfig";
+import { accountPowerThresholdW } from "../scheduleUtils";
 import GanttEditor from "../components/GanttEditor";
 import ExplainSection from "../components/ExplainSection";
 
@@ -69,12 +70,14 @@ export default function OptimizeTab() {
   } = useAppData();
 
   // Business bỏ bước "Dự báo" (Bước 2) nên tab này là Bước 2 với họ, Bước 3 với hộ gia đình.
-  const [role, setRole] = useState(null);
+  // Cũng là nguồn threshold công suất thật (role + business_profile) cho banner an toàn bên dưới.
+  const [me, setMe] = useState(null);
   useEffect(() => {
     getMe()
-      .then((me) => setRole(me.role))
-      .catch(() => setRole(null));
+      .then(setMe)
+      .catch(() => setMe(null));
   }, []);
+  const role = me?.role ?? null;
 
   // URL do người dùng nhập để lấy thêm thông tin đầu vào (vd môi trường/kế hoạch phụ tải).
   // v1: chỉ fetch + hiển thị read-only, chưa nối vào công thức QUBO.
@@ -99,8 +102,9 @@ export default function OptimizeTab() {
   }
 
   // Ngưỡng công suất đồng thời an toàn (W), theo role — backend trả về trong /optimize.
-  // Lịch sử lưu (rehydrate) không có trường này nên fallback về mặc định hộ gia đình 5000W.
-  const safePowerW = result?.power_threshold_w ?? 5000;
+  // Lịch sử lưu (rehydrate) không có trường này, nên fallback về threshold tính từ role/business_profile
+  // của chính tài khoản (accountPowerThresholdW), khớp công thức backend, thay vì hardcode 5000W.
+  const safePowerW = result?.power_threshold_w ?? accountPowerThresholdW(me);
   const peak = result ? peakPower(result.schedule, fixedHours, appliances) : null;
   const overload = peak && peak.peakW > safePowerW;
   const fmt = (n) => Math.round(n).toLocaleString("vi-VN");
