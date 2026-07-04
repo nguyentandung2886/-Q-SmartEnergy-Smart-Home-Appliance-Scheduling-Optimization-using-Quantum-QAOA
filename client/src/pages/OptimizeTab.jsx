@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppData } from "../AppData";
-import { getMe } from "../api";
+import { getMe, fetchExternalData } from "../api";
 import { WEATHER_OPTIONS } from "../forecastConfig";
 import GanttEditor from "../components/GanttEditor";
 import ExplainSection from "../components/ExplainSection";
@@ -15,6 +15,29 @@ const WEIGHT_SLIDERS = [
   { key: "comfort", icon: "🕒", label: "Tiện lợi (gần giờ quen)" },
   { key: "solar", icon: "☀️", label: "Ưu tiên điện mặt trời" },
 ];
+
+// Giải thích tức thời (không gọi API) cho tổ hợp trọng số hiện tại — dựa vào trọng số nào đang cao nhất.
+const WEIGHT_EXPLAIN = {
+  cost: { label: "Tiết kiệm chi phí", effect: "chạy vào giờ điện rẻ nhất có thể, dù có thể lệch xa giờ bạn quen dùng" },
+  comfort: { label: "Tiện lợi", effect: "chạy gần giờ bạn quen dùng hơn, có thể không phải giờ điện rẻ nhất" },
+  solar: { label: "Điện mặt trời", effect: "dồn vào khung giờ nắng để tự tiêu thụ, dù có thể không rẻ nhất hoặc không đúng giờ quen" },
+};
+
+function explainWeights(weights) {
+  const max = Math.max(weights.cost, weights.comfort, weights.solar);
+  const top = ["cost", "comfort", "solar"].filter((k) => weights[k] === max);
+
+  if (top.length === 3) {
+    return "Ba ưu tiên đang cân bằng → lịch tối ưu sẽ dung hòa giữa chi phí, tiện lợi và điện mặt trời.";
+  }
+  if (top.length === 2) {
+    const labels = top.map((k) => WEIGHT_EXPLAIN[k].label).join(" & ");
+    const effects = top.map((k) => WEIGHT_EXPLAIN[k].effect).join("; đồng thời ");
+    return `Ưu tiên ${labels} cao ngang nhau → thiết bị sẽ ${effects}.`;
+  }
+  const { label, effect } = WEIGHT_EXPLAIN[top[0]];
+  return `Ưu tiên ${label} cao nhất → thiết bị sẽ ${effect}.`;
+}
 
 function peakPower(schedule, fixedHours, appliances) {
   const watts = Array(24).fill(0);
@@ -52,6 +75,28 @@ export default function OptimizeTab() {
       .then((me) => setRole(me.role))
       .catch(() => setRole(null));
   }, []);
+
+  // URL do người dùng nhập để lấy thêm thông tin đầu vào (vd môi trường/kế hoạch phụ tải).
+  // v1: chỉ fetch + hiển thị read-only, chưa nối vào công thức QUBO.
+  const [externalUrl, setExternalUrl] = useState("");
+  const [externalData, setExternalData] = useState(null);
+  const [externalError, setExternalError] = useState(null);
+  const [externalLoading, setExternalLoading] = useState(false);
+
+  async function handleFetchExternalData() {
+    setExternalLoading(true);
+    setExternalError(null);
+    setExternalData(null);
+    try {
+      const res = await fetchExternalData(externalUrl);
+      if (res.ok) setExternalData(res.data);
+      else setExternalError(res.error);
+    } catch {
+      setExternalError("Không thể lấy dữ liệu từ URL này. Vui lòng thử lại.");
+    } finally {
+      setExternalLoading(false);
+    }
+  }
 
   // Ngưỡng công suất đồng thời an toàn (W), theo role — backend trả về trong /optimize.
   // Lịch sử lưu (rehydrate) không có trường này nên fallback về mặc định hộ gia đình 5000W.
@@ -118,6 +163,39 @@ export default function OptimizeTab() {
           </div>
         )}
         {error && <p className="form-error">{error}</p>}
+
+        <div className="field" style={{ marginTop: "1rem" }}>
+          <span>URL dữ liệu bổ sung (tuỳ chọn)</span>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <input
+              type="url"
+              placeholder="https://..."
+              value={externalUrl}
+              onChange={(e) => setExternalUrl(e.target.value)}
+              style={{ flex: "1 1 260px" }}
+            />
+            <button
+              className="btn"
+              onClick={handleFetchExternalData}
+              disabled={externalLoading || !externalUrl}
+            >
+              {externalLoading ? "Đang lấy…" : "Lấy dữ liệu"}
+            </button>
+          </div>
+          <p className="hint">
+            Dán URL trả về dữ liệu JSON (vd môi trường, kế hoạch phụ tải) để tham khảo thêm. Chỉ hiển thị,
+            chưa được dùng để tính lịch tối ưu.
+          </p>
+          {externalError && <p className="form-error">{externalError}</p>}
+          {externalData && (
+            <div className="tag" style={{ ...badgeStyle, display: "block", whiteSpace: "pre-wrap", wordBreak: "break-word", textAlign: "left" }}>
+              <strong>Thông tin bổ sung:</strong>
+              <pre style={{ margin: "0.4rem 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "0.85rem" }}>
+                {JSON.stringify(externalData, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
       </div>
 
       <AnimatePresence>
@@ -167,6 +245,7 @@ export default function OptimizeTab() {
                   <span className="weight-slider-val">{weights[s.key]}%</span>
                 </label>
               ))}
+              <p className="hint weight-explain">{explainWeights(weights)}</p>
             </div>
 
             {reoptimizing && <p className="hint">Đang tính lại lịch…</p>}

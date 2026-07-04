@@ -174,4 +174,12 @@ export async function getLiveWeather(lat, lon, daysAhead = 0) {
   return data;
 }
 
+// Fetch user-supplied external URL (e.g. a grid/load-plan feed) via the backend, which
+// guards against SSRF (only https, blocks internal/private IPs) and returns JSON.
+// Response shape: { ok: true, data } on success or { ok: false, error } on a handled failure.
+export async function fetchExternalData(url) {
+  const { data } = await apiClient.post("/api/external-data/fetch", { url });
+  return data;
+}
+
 export default apiClient;
