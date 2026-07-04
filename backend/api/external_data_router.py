@@ -23,9 +23,11 @@ hostname resolves to. Two easy-to-miss follow-on vectors are guarded too:
 """
 import ipaddress
 import json
+import os
 import socket
 from urllib.parse import urlparse, urlunparse
 
+import google.generativeai as genai
 import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -33,15 +35,26 @@ from pydantic import BaseModel
 from auth import get_current_user
 from db.models import User
 
+# Same optional-key pattern as explain_router.py: a missing/broken Gemini key must degrade the
+# summary to "unavailable", not take down /api/external-data/fetch (the JSON display still works).
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
 router = APIRouter(prefix="/api/external-data", tags=["external-data"])
 
 FETCH_TIMEOUT_SECONDS = 5.0
 MAX_RESPONSE_BYTES = 1_000_000
+SUMMARIZE_TIMEOUT_SECONDS = 15
 _BLOCKED_HOSTNAMES = {"localhost"}
 
 
 class ExternalDataRequest(BaseModel):
     url: str
+
+
+class SummarizeRequest(BaseModel):
+    data: dict
 
 
 class ExternalDataError(Exception):
@@ -160,3 +173,42 @@ async def fetch_external_data(
         return {"ok": True, "data": data}
     except ExternalDataError as e:
         return {"ok": False, "error": str(e)}
+
+
+def _build_summarize_prompt(data: dict) -> str:
+    return (
+        f"Đây là dữ liệu JSON người dùng cung cấp: {json.dumps(data, ensure_ascii=False)}. "
+        "Tóm tắt ngắn gọn bằng tiếng Việt (1-2 câu) và đưa 1 gợi ý hành động liên quan đến việc "
+        "dùng điện trong nhà/doanh nghiệp NẾU dữ liệu cho phép.\n\n"
+        "ĐƯỢC PHÉP: áp dụng kiến thức phổ thông đã được công nhận rộng rãi (vd thang phân loại "
+        "chỉ số AQI chuẩn quốc tế, khuyến cáo an toàn điện thông dụng) để diễn giải ý nghĩa của "
+        "số liệu và đưa ra gợi ý.\n"
+        "KHÔNG ĐƯỢC PHÉP: tự thêm SỐ LIỆU, ĐỊA ĐIỂM, THỜI GIAN, hay bất kỳ TRƯỜNG DỮ LIỆU nào "
+        "không có trong JSON được cung cấp.\n\n"
+        "Nếu JSON không chứa đủ ngữ cảnh để liên hệ tới bất kỳ kiến thức phổ thông nào liên quan "
+        "đến việc dùng điện, trả lời đúng câu 'Không đủ thông tin để đưa gợi ý cụ thể.'"
+    )
+
+
+@router.post("/summarize")
+def summarize_external_data(
+    payload: SummarizeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Best-effort Gemini summary of already-fetched external JSON. Any failure (no key,
+    quota, timeout, bad response) returns {"ok": False} — the caller falls back to showing
+    only the raw JSON, so this must never raise or block that display."""
+    if not GEMINI_API_KEY:
+        return {"ok": False}
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(
+            _build_summarize_prompt(payload.data),
+            request_options={"timeout": SUMMARIZE_TIMEOUT_SECONDS},
+        )
+        summary = (response.text or "").strip()
+        if not summary:
+            return {"ok": False}
+        return {"ok": True, "summary": summary}
+    except Exception:
+        return {"ok": False}

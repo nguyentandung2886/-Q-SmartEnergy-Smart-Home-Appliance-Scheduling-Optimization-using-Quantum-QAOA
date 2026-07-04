@@ -182,4 +182,11 @@ export async function fetchExternalData(url) {
   return data;
 }
 
+// Best-effort Gemini summary of already-fetched external JSON. Always resolves 200 with
+// { ok: false } on any failure (no key, quota, timeout) — caller falls back to raw JSON only.
+export async function summarizeExternalData(externalData) {
+  const { data } = await apiClient.post("/api/external-data/summarize", { data: externalData });
+  return data;
+}
+
 export default apiClient;

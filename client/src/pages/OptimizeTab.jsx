@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppData } from "../AppData";
-import { getMe, fetchExternalData } from "../api";
+import { getMe, fetchExternalData, summarizeExternalData } from "../api";
 import { WEATHER_OPTIONS } from "../forecastConfig";
 import { accountPowerThresholdW } from "../scheduleUtils";
 import GanttEditor from "../components/GanttEditor";
@@ -85,15 +85,31 @@ export default function OptimizeTab() {
   const [externalData, setExternalData] = useState(null);
   const [externalError, setExternalError] = useState(null);
   const [externalLoading, setExternalLoading] = useState(false);
+  // Tóm tắt Gemini cho dữ liệu vừa fetch — best-effort, không chặn/ẩn JSON thô nếu lỗi.
+  const [externalSummary, setExternalSummary] = useState(null);
+  const [externalSummaryLoading, setExternalSummaryLoading] = useState(false);
 
   async function handleFetchExternalData() {
     setExternalLoading(true);
     setExternalError(null);
     setExternalData(null);
+    setExternalSummary(null);
     try {
       const res = await fetchExternalData(externalUrl);
-      if (res.ok) setExternalData(res.data);
-      else setExternalError(res.error);
+      if (res.ok) {
+        setExternalData(res.data);
+        setExternalSummaryLoading(true);
+        try {
+          const summaryRes = await summarizeExternalData(res.data);
+          if (summaryRes.ok) setExternalSummary(summaryRes.summary);
+        } catch {
+          // Best-effort: giữ nguyên JSON thô, chỉ bỏ qua phần tóm tắt.
+        } finally {
+          setExternalSummaryLoading(false);
+        }
+      } else {
+        setExternalError(res.error);
+      }
     } catch {
       setExternalError("Không thể lấy dữ liệu từ URL này. Vui lòng thử lại.");
     } finally {
@@ -194,6 +210,8 @@ export default function OptimizeTab() {
           {externalData && (
             <div className="tag" style={{ ...badgeStyle, display: "block", whiteSpace: "pre-wrap", wordBreak: "break-word", textAlign: "left" }}>
               <strong>Thông tin bổ sung:</strong>
+              {externalSummaryLoading && <p className="hint" style={{ margin: "0.4rem 0 0" }}>Đang phân tích...</p>}
+              {externalSummary && <p style={{ margin: "0.4rem 0 0" }}>{externalSummary}</p>}
               <pre style={{ margin: "0.4rem 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "0.85rem" }}>
                 {JSON.stringify(externalData, null, 2)}
               </pre>

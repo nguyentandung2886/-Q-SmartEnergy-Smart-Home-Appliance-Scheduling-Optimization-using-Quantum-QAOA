@@ -13,10 +13,12 @@ Verifies:
    {"ok": False, "error": ...} (never 500) for a blocked internal URL.
 """
 import asyncio
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
+from api import external_data_router
 from api.external_data_router import (
     ExternalDataError,
     fetch_external_json,
@@ -215,3 +217,78 @@ class TestFetchEndpoint:
         body = response.json()
         assert body["ok"] is False
         assert "error" in body
+
+
+class TestBuildSummarizePrompt:
+    def test_permits_common_knowledge_interpretation_of_aqi(self):
+        # Regression: the prompt must let Gemini apply widely-recognized general knowledge
+        # (e.g. the standard AQI scale) to interpret a bare number like {"aqi": 180} — an
+        # earlier, stricter wording caused Gemini to refuse any suggestion for this case.
+        prompt = external_data_router._build_summarize_prompt({"aqi": 180})
+        assert "ĐƯỢC PHÉP" in prompt
+        assert "kiến thức phổ thông" in prompt
+        assert "180" in prompt
+
+    def test_still_forbids_fabricating_fields_not_in_the_json(self):
+        prompt = external_data_router._build_summarize_prompt({"aqi": 180})
+        assert "KHÔNG ĐƯỢC PHÉP" in prompt
+        assert "TRƯỜNG DỮ LIỆU" in prompt
+
+
+class TestSummarizeEndpoint:
+    def test_requires_auth(self, client):
+        response = client.post("/api/external-data/summarize", json={"data": {"aqi": 180}})
+        assert response.status_code == 401
+
+    def test_returns_summary_from_mocked_gemini(self, client, auth_headers, monkeypatch):
+        monkeypatch.setattr(external_data_router, "GEMINI_API_KEY", "fake-key-for-test")
+
+        mock_response = MagicMock()
+        mock_response.text = "Chỉ số AQI ở mức 180, cân nhắc hạn chế dùng thiết bị ngoài trời."
+
+        with patch("api.external_data_router.genai.GenerativeModel") as mock_cls:
+            mock_model = MagicMock()
+            mock_cls.return_value = mock_model
+            mock_model.generate_content.return_value = mock_response
+
+            headers = auth_headers("summarizeuser1")
+            response = client.post(
+                "/api/external-data/summarize",
+                json={"data": {"aqi": 180}},
+                headers=headers,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert "180" in body["summary"]
+
+    def test_missing_gemini_key_returns_ok_false_not_500(self, client, auth_headers, monkeypatch):
+        monkeypatch.setattr(external_data_router, "GEMINI_API_KEY", None)
+
+        headers = auth_headers("summarizeuser2")
+        response = client.post(
+            "/api/external-data/summarize",
+            json={"data": {"foo": "bar"}},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json() == {"ok": False}
+
+    def test_gemini_exception_returns_ok_false_not_500(self, client, auth_headers, monkeypatch):
+        monkeypatch.setattr(external_data_router, "GEMINI_API_KEY", "fake-key-for-test")
+
+        with patch("api.external_data_router.genai.GenerativeModel") as mock_cls:
+            mock_model = MagicMock()
+            mock_cls.return_value = mock_model
+            mock_model.generate_content.side_effect = TimeoutError("timed out")
+
+            headers = auth_headers("summarizeuser3")
+            response = client.post(
+                "/api/external-data/summarize",
+                json={"data": {"foo": "bar"}},
+                headers=headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"ok": False}
