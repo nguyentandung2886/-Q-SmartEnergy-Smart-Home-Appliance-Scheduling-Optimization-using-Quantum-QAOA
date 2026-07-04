@@ -10,6 +10,8 @@ Schema:
                 solver_used, used_fallback, energy, schedule_json (JSON string),
                 monthly_kwh (snapshot), bill_before_vnd (snapshot), bill_after_vnd (snapshot)
   feedback    — id, user_id FK, rating (1-5), message, is_featured, created_at
+  user_preference_events — id, user_id FK, created_at, w_cost, w_comfort, w_solar,
+                num_variables, energy, accepted (log mỗi lần /optimize chạy)
 """
 from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -108,3 +110,20 @@ class FeedbackModel(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="feedback")
+
+
+class UserPreferenceEvent(Base):
+    """Log mỗi lần /optimize chạy thành công: trọng số đa mục tiêu (slider) người dùng chọn +
+    tóm tắt kết quả — tiền đề dữ liệu hành vi cho tự động hóa Smart Home sau này. Ghi
+    best-effort, không có quan hệ ORM ngược tới User (xem optimize_router._log_preference_event)."""
+    __tablename__ = "user_preference_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    w_cost = Column(Float, nullable=False)
+    w_comfort = Column(Float, nullable=False)
+    w_solar = Column(Float, nullable=False)
+    num_variables = Column(Integer, nullable=False)
+    energy = Column(Float, nullable=False)
+    accepted = Column(Boolean, nullable=False, server_default="1", default=True)

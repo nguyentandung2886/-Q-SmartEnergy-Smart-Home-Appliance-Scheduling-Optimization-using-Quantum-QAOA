@@ -27,7 +27,7 @@ from core.business_calc import EVN_BUSINESS_TIERS, calculate_business_bill, clas
 from core.appliance_catalog import DEFAULT_USAGE_WINDOWS, split_by_flexibility, usage_windows
 from auth import get_current_user
 from db.database import get_db
-from db.models import ApplianceModel, ScheduleModel, User
+from db.models import ApplianceModel, ScheduleModel, User, UserPreferenceEvent
 from core.quantum_runner import QuantumScheduler, compare_qaoa_hyperparameters, solve_classical_bruteforce
 from core.qubo_builder import Appliance, DEFAULT_POWER_THRESHOLD_W
 
@@ -501,6 +501,28 @@ def _prepare_run(payload: OptimizeRequest, current_user: User, db: Session) -> _
     )
 
 
+def _log_preference_event(
+    db: Session, user_id: int, payload: OptimizeRequest, num_variables: int, energy: float,
+) -> None:
+    """Ghi lại trọng số đa mục tiêu (slider) + tóm tắt kết quả của lần /optimize này vào
+    user_preference_events — tiền đề dữ liệu hành vi cho tự động hóa Smart Home sau này.
+    Best-effort: KHÔNG được để lỗi insert (vd bảng chưa migrate) làm fail response /optimize
+    chính, nên bọc try/except riêng và chỉ log ra console khi thất bại."""
+    try:
+        db.add(UserPreferenceEvent(
+            user_id=user_id,
+            w_cost=payload.w_cost,
+            w_comfort=payload.w_comfort,
+            w_solar=payload.w_solar,
+            num_variables=num_variables,
+            energy=energy,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("Không ghi được user_preference_event cho user_id=%s", user_id, exc_info=True)
+
+
 @router.post("/optimize", response_model=ScheduleOut)
 def optimize(
     payload: OptimizeRequest,
@@ -594,6 +616,10 @@ def optimize(
     db.add(row)
     db.commit()
     db.refresh(row)
+
+    _log_preference_event(
+        db, current_user.id, payload, scheduler.Q.shape[0], result.energy,
+    )
 
     return ScheduleOut(
         id=row.id, created_at=row.created_at.isoformat(),
