@@ -17,6 +17,7 @@ Verifies (per Task 3 brief):
 import itertools
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from core.data_prep import build_daily_profile
@@ -24,8 +25,17 @@ from core.qubo_builder import (
     Appliance,
     TimeSlot,
     DEFAULT_APPLIANCES,
+    COMFORT_UNIT_VND,
     build_qubo,
 )
+
+
+def _price_at(profile, hour: int) -> float:
+    return float(profile.loc[profile["hour"] == hour, "price_per_kwh"].iloc[0])
+
+
+def _solar_at(profile, hour: int) -> float:
+    return float(profile.loc[profile["hour"] == hour, "solar_kwh"].iloc[0])
 
 
 def evaluate(Q: np.ndarray, x) -> float:
@@ -150,3 +160,121 @@ def test_appliance_is_flexible_can_be_set_false():
         name="Tủ lạnh", power_w=34, duration_hours=24, candidate_hours=(), is_flexible=False
     )
     assert appliance.is_flexible is False
+
+
+# --- Multi-objective weights (w_cost / w_comfort / w_solar) ------------------
+# Additive feature: default weights (1.0, 0.0, 1.0) must reproduce the legacy objective
+# exactly (H_cost + H_solar, no comfort term). w_cost/w_solar scale the two objective axes;
+# w_comfort adds a NEW penalty proportional to how far a candidate hour is from the
+# appliance's FIRST (default-convenient) candidate hour. lambda_onehot/lambda_power are
+# constraint weights and are never scaled by these.
+
+
+def test_weight_kwargs_default_to_legacy_identity():
+    """Not passing weights == passing (w_cost=1, w_comfort=0, w_solar=1): the defaults are the
+    legacy objective, so every existing call is byte-identical (regression guard)."""
+    profile = build_daily_profile()
+    Q_default, _ = build_qubo(DEFAULT_APPLIANCES, profile)
+    Q_explicit, _ = build_qubo(DEFAULT_APPLIANCES, profile, w_cost=1.0, w_comfort=0.0, w_solar=1.0)
+    assert np.array_equal(Q_default, Q_explicit)
+
+
+def test_w_cost_scales_only_the_cost_term():
+    """Doubling w_cost adds exactly one more H_cost (= energy_kwh * price) to each diagonal,
+    with w_solar/w_comfort neutralized so nothing else moves."""
+    profile = build_daily_profile()
+    app = Appliance("Solo", power_w=1000, duration_hours=1, candidate_hours=(9, 15))  # 1 kWh
+    Q1, vm = build_qubo([app], profile, w_cost=1.0, w_solar=0.0, w_comfort=0.0)
+    Q2, _ = build_qubo([app], profile, w_cost=2.0, w_solar=0.0, w_comfort=0.0)
+    for j, (_name, hour) in vm.items():
+        expected = _price_at(profile, hour)  # energy_kwh = 1.0
+        assert Q2[j, j] - Q1[j, j] == pytest.approx(expected)
+        assert expected > 0
+
+
+def test_w_solar_scales_only_the_solar_credit():
+    """Doubling w_solar adds one more H_solar (= -min(energy, solar) * price, a credit) to each
+    diagonal; with w_cost=0 the diagonal is pure solar credit and moves down."""
+    profile = build_daily_profile()
+    app = Appliance("Solo", power_w=1000, duration_hours=1, candidate_hours=(9, 15))  # 1 kWh
+    Q1, vm = build_qubo([app], profile, w_cost=0.0, w_solar=1.0, w_comfort=0.0)
+    Q2, _ = build_qubo([app], profile, w_cost=0.0, w_solar=2.0, w_comfort=0.0)
+    for j, (_name, hour) in vm.items():
+        solar = _solar_at(profile, hour)
+        expected = -min(1.0, solar) * _price_at(profile, hour)  # h_solar, <= 0
+        assert Q2[j, j] - Q1[j, j] == pytest.approx(expected)
+        assert expected <= 0
+    # At least one midday candidate has solar, so the credit is a real (negative) lever.
+    assert _solar_at(profile, 15) > 0
+
+
+def test_w_comfort_penalizes_distance_from_first_candidate_hour():
+    """H_comfort = w_comfort * COMFORT_UNIT_VND * |hour - first_candidate_hour|, added to the
+    diagonal. The FIRST candidate hour (distance 0) gets no penalty; a later one gets a penalty
+    proportional to its hour-distance. This is the only term w_comfort touches."""
+    profile = build_daily_profile()
+    app = Appliance("Solo", power_w=1000, duration_hours=1, candidate_hours=(8, 14))  # first=8
+    Q0, vm = build_qubo([app], profile, w_comfort=0.0)
+    Q1, _ = build_qubo([app], profile, w_comfort=1.0)
+    inv = {v: k for k, v in vm.items()}
+    j_first, j_far = inv[("Solo", 8)], inv[("Solo", 14)]
+    # First candidate hour: zero distance -> unchanged by comfort.
+    assert Q1[j_first, j_first] == pytest.approx(Q0[j_first, j_first])
+    # Far candidate hour (distance 6): penalty = 1.0 * COMFORT_UNIT_VND * 6.
+    added = Q1[j_far, j_far] - Q0[j_far, j_far]
+    assert added == pytest.approx(COMFORT_UNIT_VND * 6)
+    assert added > 0
+
+
+def test_w_comfort_does_not_touch_onehot_or_power_penalties():
+    """Comfort only shifts diagonal objective coefficients; the one-hot off-diagonal and the
+    power off-diagonal penalties (lambda-scaled constraints) stay exactly as before."""
+    profile = build_daily_profile()
+    apps = [
+        Appliance("A", power_w=3000, duration_hours=1, candidate_hours=(10, 14)),
+        Appliance("B", power_w=3000, duration_hours=1, candidate_hours=(10, 16)),
+    ]
+    Q0, _ = build_qubo(apps, profile, w_comfort=0.0)
+    Q1, _ = build_qubo(apps, profile, w_comfort=5.0)
+    n = Q0.shape[0]
+    for i in range(n):
+        for k in range(i + 1, n):
+            assert Q1[i, k] == Q0[i, k], f"off-diagonal ({i},{k}) must be untouched by w_comfort"
+
+
+def test_high_comfort_makes_first_candidate_hour_the_optimum():
+    """Behavioral: with comfort weighted high enough to outweigh the cost/solar spread, the
+    brute-force optimum schedules the appliance at its first (convenient) candidate hour."""
+    from core.quantum_runner import solve_classical_bruteforce, decode_schedule
+
+    profile = build_daily_profile()
+    app = Appliance("Solo", power_w=1000, duration_hours=1, candidate_hours=(8, 14))
+    Q, vm = build_qubo([app], profile, w_comfort=10.0)
+    bitstring, _ = solve_classical_bruteforce(Q)
+    assert decode_schedule(bitstring, vm) == {"Solo": 8}
+
+
+def _profile_with(prices: dict, solars: dict) -> pd.DataFrame:
+    """A 24-row daily_profile with per-hour overrides (default price 2000đ, solar 0) — lets a test
+    craft a time-varying (TOU-style) price/solar curve to isolate the cost vs solar tradeoff."""
+    return pd.DataFrame({
+        "hour": range(24),
+        "solar_kwh": [solars.get(h, 0.0) for h in range(24)],
+        "price_per_kwh": [prices.get(h, 2000.0) for h in range(24)],
+    })
+
+
+def test_cost_and_solar_weights_steer_the_schedule_oppositely():
+    """Behavioral tradeoff on a crafted profile: hour 8 is cheap (1000đ) but sunless; hour 12 is
+    pricey (3000đ) but fully solar-covered. Emphasizing cost picks the cheap gross-price hour;
+    emphasizing solar picks the sunny hour. This is what the 'cost' vs 'solar' sliders do."""
+    from core.quantum_runner import solve_classical_bruteforce, decode_schedule
+
+    profile = _profile_with(prices={8: 1000.0, 12: 3000.0}, solars={12: 5.0})
+    app = Appliance("Solo", power_w=1000, duration_hours=1, candidate_hours=(8, 12))  # 1 kWh
+
+    Q_cost, vm = build_qubo([app], profile, w_cost=5.0, w_solar=1.0, w_comfort=0.0)
+    assert decode_schedule(solve_classical_bruteforce(Q_cost)[0], vm) == {"Solo": 8}
+
+    Q_solar, vm2 = build_qubo([app], profile, w_cost=1.0, w_solar=5.0, w_comfort=0.0)
+    assert decode_schedule(solve_classical_bruteforce(Q_solar)[0], vm2) == {"Solo": 12}

@@ -13,6 +13,18 @@ const AppDataContext = createContext(null);
 // Geolocation fallback when the browser denies/lacks it — central Hà Nội.
 const HANOI = { lat: 21.0285, lon: 105.8542 };
 
+// Default slider positions (percent) for the multi-objective optimize weights. Cost & solar sit
+// at the neutral midpoint (50% -> weight 1.0); comfort starts OFF (0% -> weight 0.0) so the
+// default request reproduces the pure cost/solar schedule exactly (matches the backend defaults).
+const DEFAULT_WEIGHTS = { cost: 50, solar: 50, comfort: 0 };
+
+// Slider percentages (0-100) -> QUBO objective weights sent to /optimize. 50% = 1.0 for the
+// multiplicative cost/solar axes; comfort maps the same way but starts at 0. Backend caps each at
+// 10 (ge=0, le=10), and 0-100/50 = 0..2 stays well inside that.
+function toBackendWeights(w) {
+  return { w_cost: w.cost / 50, w_solar: w.solar / 50, w_comfort: w.comfort / 50 };
+}
+
 // --- date helpers: the UI works in local yyyy-mm-dd strings; the backend needs day_of_month
 // (1-30) for the EVN tier baseline and days_ahead (0=today) to pick the forecast block. ---
 function toISODate(d) {
@@ -105,6 +117,9 @@ export function AppDataProvider({ children }) {
   const firedDayRef = useRef(toISODate(new Date()));
   const debounceRef = useRef(null);
   const billDebounceRef = useRef(null);
+  const weightsDebounceRef = useRef(null);
+  // Multi-objective optimize weights as slider percentages (see DEFAULT_WEIGHTS / toBackendWeights).
+  const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -275,10 +290,14 @@ export function AppDataProvider({ children }) {
     }
   }
 
-  async function runOptimize(pinned = {}, overrides = durationOverrides) {
+  async function runOptimize(pinned = {}, overrides = durationOverrides, weightsArg = weights, soft = false) {
     const isDrag = Object.keys(pinned).length > 0;
+    // Drag re-optimize AND slider re-tune (soft) keep the current Gantt on screen while recomputing;
+    // only a fresh "Tối ưu hóa" click clears it. weightsArg is passed explicitly by the slider
+    // handler so the debounced call never reads a stale weights state.
+    const keepResult = isDrag || soft;
     setError("");
-    if (isDrag) {
+    if (keepResult) {
       setReoptimizing(true);
       setExplainText("");
     } else {
@@ -291,6 +310,7 @@ export function AppDataProvider({ children }) {
         day_of_month: Number(dayOfMonth),
         weather_condition: weather,
         use_quantum: true,
+        ...toBackendWeights(weightsArg),
         ...(Object.keys(overrides).length ? { duration_overrides: overrides } : {}),
         ...(isDrag ? { pinned_schedule: pinned } : {}),
       });
@@ -310,6 +330,19 @@ export function AppDataProvider({ children }) {
   function handlePinnedChange(newPinned) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => runOptimize(newPinned), 400);
+  }
+
+  // Multi-objective sliders: update the weight state immediately (so the slider tracks the drag),
+  // then debounce 400ms — same pattern as handlePinnedChange — before re-optimizing with the NEW
+  // weights so a fast drag fires one request, not many. Only re-optimizes if a schedule already
+  // exists (otherwise the first "Tối ưu hóa" click will just pick up the chosen weights).
+  function handleWeightsChange(newWeights) {
+    setWeights(newWeights);
+    if (weightsDebounceRef.current) clearTimeout(weightsDebounceRef.current);
+    weightsDebounceRef.current = setTimeout(() => {
+      if (!result) return;
+      runOptimize({}, durationOverrides, newWeights, true);
+    }, 400);
   }
 
   // Gỡ override thời lượng dự báo (ML): xóa forecasts và tối ưu lại với thời lượng thật ngay
@@ -420,6 +453,7 @@ export function AppDataProvider({ children }) {
     todayISO, tomorrowISO: addDaysISO(todayISO, 1), maxDateISO: addDaysISO(todayISO, 5),
     selectedDate, changeDate, forecastAvailable,
     result, loading, reoptimizing, error, runOptimize,
+    weights, handleWeightsChange,
     forecastInputs, setForecastField, forecasts, forecasting, handleForecast,
     fixedHours, handlePinnedChange, handleFixedHoursChange,
     durationOverrides, clearDurationOverrides,

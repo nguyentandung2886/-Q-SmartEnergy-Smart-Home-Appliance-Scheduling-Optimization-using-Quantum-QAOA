@@ -90,6 +90,14 @@ class OptimizeRequest(BaseModel):
     # ML-forecasted run durations (giờ) per appliance name, from /forecast. Override the
     # catalog duration_hours before building the QUBO so the classical ML layer feeds QAOA.
     duration_overrides: Optional[Dict[str, float]] = None
+    # Trọng số ĐA MỤC TIÊU (slider UI, tùy chọn). Chỉ nhân vào các số hạng OBJECTIVE của QUBO
+    # (H_cost, H_solar) và bật số hạng mới H_comfort — KHÔNG đụng lambda one-hot/power (ràng buộc).
+    # Mặc định (1, 0, 1) = hành vi cũ y hệt: bỏ trống 3 trường này -> /optimize trả kết quả như trước.
+    # Trần le=10 giữ w_comfort*COMFORT_UNIT_VND*23h < lambda (1e6) nên không bao giờ phá vỡ one-hot;
+    # ge=0 chặn trọng số âm (biến chi phí thành phần thưởng). Xem qubo_builder.build_qubo.
+    w_cost: float = Field(1.0, ge=0, le=10)      # "Tiết kiệm chi phí" — nhân H_cost
+    w_comfort: float = Field(0.0, ge=0, le=10)   # "Tiện lợi" — H_comfort (0 = tắt, giữ regression)
+    w_solar: float = Field(1.0, ge=0, le=10)     # "Ưu tiên điện mặt trời" — nhân H_solar
 
     @field_validator("duration_overrides")
     @classmethod
@@ -466,8 +474,11 @@ def _prepare_run(payload: OptimizeRequest, current_user: User, db: Session) -> _
     power_threshold_w = _power_threshold_for_user(current_user)
     # Tải nền cố định (W) theo giờ để H_power cộng dồn khi xét ngưỡng quá tải (Bug #5).
     fixed_load_w = _fixed_load_w_by_hour(fixed)
+    # Trọng số đa mục tiêu (slider UI) chuyển thẳng vào QUBO qua QuantumScheduler -> build_qubo.
+    # /optimize và /qaoa-analysis dùng chung _prepare_run nên cùng nhận trọng số -> Q vẫn khớp (C7).
     scheduler = QuantumScheduler(
-        flexible, profile, power_threshold_w=power_threshold_w, fixed_load_w=fixed_load_w
+        flexible, profile, power_threshold_w=power_threshold_w, fixed_load_w=fixed_load_w,
+        w_cost=payload.w_cost, w_comfort=payload.w_comfort, w_solar=payload.w_solar,
     )
     # Chặn brute-force 2^n bùng nổ: > 20 biến (n_vars) là quá lớn cho fallback cổ điển
     # (2^21 tổ hợp) và sẽ treo worker vô hạn (bug #A3). Trả 422 rõ ràng ngay thay vì để chạy.

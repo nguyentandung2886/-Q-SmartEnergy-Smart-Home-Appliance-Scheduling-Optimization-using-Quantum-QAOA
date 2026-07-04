@@ -35,6 +35,27 @@ from core.quantum_runner import (
 )
 
 
+def test_scheduler_default_qubo_unchanged_by_weight_params():
+    """QuantumScheduler with no weight args builds exactly the legacy QUBO (regression)."""
+    profile = build_daily_profile()
+    scheduler = QuantumScheduler(DEFAULT_APPLIANCES, profile)
+    Q_legacy, _ = build_qubo(DEFAULT_APPLIANCES, profile)
+    assert np.array_equal(scheduler.Q, Q_legacy)
+
+
+def test_scheduler_forwards_objective_weights_to_build_qubo():
+    """QuantumScheduler passes w_cost/w_comfort/w_solar straight through to build_qubo, so its Q
+    equals a directly-weighted build (constructor passthrough, no solver-logic change)."""
+    profile = build_daily_profile()
+    scheduler = QuantumScheduler(
+        DEFAULT_APPLIANCES, profile, w_cost=1.5, w_comfort=3.0, w_solar=0.5
+    )
+    Q_expected, _ = build_qubo(
+        DEFAULT_APPLIANCES, profile, w_cost=1.5, w_comfort=3.0, w_solar=0.5
+    )
+    assert np.array_equal(scheduler.Q, Q_expected)
+
+
 def test_solve_classical_bruteforce_hand_computed():
     """Test 1: Q = [[1,2],[0,-1]] -> x0 + 2*x0*x1 - x1.
     (0,0)=0, (0,1)=-1, (1,0)=1, (1,1)=2 -> minimum is bitstring '01' energy -1.0."""

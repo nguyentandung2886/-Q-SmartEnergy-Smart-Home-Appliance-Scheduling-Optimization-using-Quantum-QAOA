@@ -323,9 +323,14 @@ class QuantumScheduler:
         qaoa_maxiter: int = 50,
         seed: int = 42,
         fixed_load_w: Dict[int, float] = None,
+        w_cost: float = 1.0,
+        w_comfort: float = 0.0,
+        w_solar: float = 1.0,
     ) -> None:
         """Build QUBO ngay trong __init__, lưu self.Q, self.var_map. fixed_load_w (tải nền cố
-        định W theo giờ) được chuyển thẳng cho build_qubo để H_power cộng dồn tải nền (bug #5)."""
+        định W theo giờ) được chuyển thẳng cho build_qubo để H_power cộng dồn tải nền (bug #5).
+        w_cost/w_comfort/w_solar (trọng số đa mục tiêu, slider UI) cũng chỉ được CHUYỂN THẲNG cho
+        build_qubo — logic solver QAOA không đổi; mặc định (1,0,1) giữ nguyên QUBO cũ."""
         self.appliances = appliances
         self.daily_profile = daily_profile
         self.qaoa_reps = qaoa_reps
@@ -338,6 +343,9 @@ class QuantumScheduler:
             lambda_onehot=lambda_onehot,
             lambda_power=lambda_power,
             fixed_load_w=fixed_load_w,
+            w_cost=w_cost,
+            w_comfort=w_comfort,
+            w_solar=w_solar,
         )
 
     def solve(self, use_quantum: bool = True) -> ScheduleResult:

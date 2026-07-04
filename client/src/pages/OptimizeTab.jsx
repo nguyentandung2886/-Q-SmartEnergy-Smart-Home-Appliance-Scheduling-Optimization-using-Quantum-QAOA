@@ -9,6 +9,13 @@ import ExplainSection from "../components/ExplainSection";
 const WEATHER_ICON = { sunny: "☀️", cloudy: "⛅", rainy: "🌧️" };
 const badgeStyle = { fontSize: "0.9rem", padding: "0.5rem 0.9rem", textTransform: "none", letterSpacing: 0 };
 
+// Multi-objective optimize sliders (0-100%). key must match the AppData weights state.
+const WEIGHT_SLIDERS = [
+  { key: "cost", icon: "💰", label: "Tiết kiệm chi phí" },
+  { key: "comfort", icon: "🕒", label: "Tiện lợi (gần giờ quen)" },
+  { key: "solar", icon: "☀️", label: "Ưu tiên điện mặt trời" },
+];
+
 function peakPower(schedule, fixedHours, appliances) {
   const watts = Array(24).fill(0);
   const at = Array.from({ length: 24 }, () => []);
@@ -31,6 +38,7 @@ function peakPower(schedule, fixedHours, appliances) {
 export default function OptimizeTab() {
   const {
     weather, weatherLoading, loading, error, runOptimize,
+    weights, handleWeightsChange,
     result, reoptimizing, fixedHours, appliances, handlePinnedChange, handleFixedHoursChange,
     durationOverrides, clearDurationOverrides,
     analysis, analyzing, handleAnalyze, explainText, explainLoading, handleExplain,
@@ -136,6 +144,29 @@ export default function OptimizeTab() {
               <div className="bill-solver">
                 <span className="tag">{result.solver_used}{result.used_fallback ? " · fallback" : ""}</span>
               </div>
+            </div>
+
+            <div className="opt-weights">
+              <div>
+                <span className="opt-weights-title">Ưu tiên tối ưu</span>
+                <p className="opt-weights-sub">
+                  Kéo để cân bằng giữa hóa đơn rẻ nhất, chạy gần giờ quen và tận dụng điện mặt trời —
+                  lịch và hóa đơn tự cập nhật ngay sau khi bạn thả.
+                </p>
+              </div>
+              {WEIGHT_SLIDERS.map((s) => (
+                <label key={s.key} className="weight-slider">
+                  <span className="weight-slider-label">{s.icon} {s.label}</span>
+                  <input
+                    type="range" min={0} max={100} step={5}
+                    value={weights[s.key]}
+                    onChange={(e) => handleWeightsChange({ ...weights, [s.key]: Number(e.target.value) })}
+                    disabled={reoptimizing}
+                    aria-label={s.label}
+                  />
+                  <span className="weight-slider-val">{weights[s.key]}%</span>
+                </label>
+              ))}
             </div>
 
             {reoptimizing && <p className="hint">Đang tính lại lịch…</p>}

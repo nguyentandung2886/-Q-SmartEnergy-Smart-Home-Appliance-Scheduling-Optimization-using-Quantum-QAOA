@@ -92,6 +92,14 @@ class Appliance:
 DEFAULT_POWER_THRESHOLD_W: float = 5000.0
 
 
+# Đơn giá "tiện lợi" (VND) cho H_comfort: phạt bao nhiêu đồng cho MỖI GIỜ mà lịch xa giờ ứng viên
+# đầu tiên, ở mức w_comfort=1.0. Chọn 2000đ/giờ để ở dải trọng số thực tế của UI (w_comfort 0..2)
+# thành phần này ~vài nghìn→vài chục nghìn đồng — cùng thang với H_cost/H_solar nên slider đánh đổi
+# được hai trục, nhưng vẫn NHỎ HƠN lambda (1e6) nhiều lần để KHÔNG bao giờ ghi đè ràng buộc one-hot/
+# power (kể cả w_comfort tối đa 10 × 23 giờ × 2000 = 460k < 1e6). Đây là hằng tuning, không phải giá EVN.
+COMFORT_UNIT_VND: float = 2000.0
+
+
 # Scenario PoC mặc định (4 biến = 2 thiết bị × 2 giờ ứng viên → "4-5 qubit").
 # Định nghĩa module-level để Task 4/5 import lại, không hard-code rời.
 DEFAULT_APPLIANCES: List[Appliance] = [
@@ -116,22 +124,33 @@ def build_qubo(
     lambda_onehot: float = 1_000_000.0,
     lambda_power: float = 1_000_000.0,
     fixed_load_w: Optional[Dict[int, float]] = None,
+    w_cost: float = 1.0,
+    w_comfort: float = 0.0,
+    w_solar: float = 1.0,
 ) -> Tuple[np.ndarray, Dict[int, Tuple[str, int]]]:
     """
     Hàm mục tiêu (objective Hamiltonian) được mã hóa vào ma trận Q:
 
-        H = H_cost + H_solar + λ1 · H_onehot + λ2 · H_power
+        H = w_cost · H_cost + w_solar · H_solar + w_comfort · H_comfort + λ1 · H_onehot + λ2 · H_power
 
-        H_cost   = Σ_{i,k} x_{i,k} · E_i · P(h_{i,k})
-        H_solar  = - Σ_{i,k} x_{i,k} · min(E_i, S(h_{i,k})) · P(h_{i,k})
-        H_onehot = Σ_i ( Σ_k x_{i,k} - 1 )²        [mỗi thiết bị chạy đúng 1 lần]
-        H_power  = Σ_{(i,k): power_i + F(h_{i,k}) > P_max} x_{i,k}            [tải nền + 1 thiết bị]
+        H_cost    = Σ_{i,k} x_{i,k} · E_i · P(h_{i,k})
+        H_solar   = - Σ_{i,k} x_{i,k} · min(E_i, S(h_{i,k})) · P(h_{i,k})
+        H_comfort = Σ_{i,k} x_{i,k} · |h_{i,k} - h_{i,0}| · COMFORT_UNIT_VND   [xa giờ tiện càng phạt]
+        H_onehot  = Σ_i ( Σ_k x_{i,k} - 1 )²        [mỗi thiết bị chạy đúng 1 lần]
+        H_power   = Σ_{(i,k): power_i + F(h_{i,k}) > P_max} x_{i,k}            [tải nền + 1 thiết bị]
                  + Σ_{(i,k),(i',k'): i≠i', h_{i,k}=h_{i',k'}, power_i+power_{i'}+F(h)>P_max}
                        x_{i,k} · x_{i',k'}          [không vượt ngưỡng công suất P_max]
 
         E_i = energy_kwh (power_w/1000 * duration_hours);  P(h) = price_per_kwh tại h;
         S(h) = solar_kwh tại h;  F(h) = tải nền cố định (W) đang bật tại h (fixed_load_w);
-        P_max = power_threshold_w.
+        P_max = power_threshold_w;  h_{i,0} = giờ ứng viên ĐẦU TIÊN của thiết bị i (giờ "tiện" mặc định).
+
+    TRỌNG SỐ ĐA MỤC TIÊU (w_cost/w_comfort/w_solar): chỉ nhân vào 3 số hạng OBJECTIVE để UI slider
+    đánh đổi giữa "rẻ nhất" / "tiện nhất" / "dùng nhiều điện mặt trời nhất". λ1/λ2 (one-hot & power)
+    là RÀNG BUỘC cấu trúc, KHÔNG bao giờ nhân trọng số. Mặc định (w_cost=1, w_comfort=0, w_solar=1)
+    = đúng hành vi cũ: 1·H_cost + 1·H_solar + 0·H_comfort ≡ H_cost + H_solar (thay đổi additive,
+    không breaking). w_comfort mặc định 0 (KHÔNG phải 1) vì H_comfort là số hạng MỚI — mọi giá trị
+    ≠0 sẽ đổi nghiệm, nên để giữ regression thì phải tắt mặc định.
 
     Ý nghĩa kinh tế: H_cost + H_solar cho 1 biến = x_{i,k} · max(0, E_i - S(h)) · P(h)
     — chỉ phần kWh KHÔNG được solar tự cấp mới bị tính theo bậc giá. Giữ 2 số hạng
@@ -192,13 +211,19 @@ def build_qubo(
     # dùng energy_kwh chính xác (var_power chỉ giữ power_w, không có duration).
     for appliance, idxs in zip(appliances, vars_of_appliance):
         energy_kwh = appliance.energy_kwh
+        # Giờ ứng viên đầu tiên = mốc "tiện" mặc định để đo khoảng cách cho H_comfort.
+        first_hour = appliance.candidate_hours[0] if appliance.candidate_hours else None
         for jj in idxs:
             hour = var_map[jj][1]
             price = _lookup(daily_profile, hour, "price_per_kwh")
             solar = _lookup(daily_profile, hour, "solar_kwh")
             h_cost = energy_kwh * price                     # H_cost: tránh nhảy bậc giá
             h_solar = -min(energy_kwh, solar) * price       # H_solar: self-consumption
-            Q[jj, jj] += h_cost + h_solar
+            Q[jj, jj] += w_cost * h_cost + w_solar * h_solar
+            # H_comfort: phạt tuyến tính theo |giờ chạy - giờ ứng viên đầu|. w_comfort=0 (mặc định)
+            # -> bỏ qua hoàn toàn, Q không đổi so với bản cũ (regression). Số hạng tuyến tính -> đường chéo.
+            if w_comfort and first_hour is not None:
+                Q[jj, jj] += w_comfort * COMFORT_UNIT_VND * abs(hour - first_hour)
 
     # --- λ1 · H_onehot ---
     # (Σ_k x_{i,k} - 1)² = -Σ_k x_{i,k} + 2·Σ_{k<k'} x_{i,k}x_{i,k'} + 1.
