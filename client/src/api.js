@@ -51,6 +51,16 @@ export async function deleteAppliance(id) {
   await apiClient.delete(`/appliances/${id}`);
 }
 
+// Nhận diện thiết bị từ ảnh nhãn (Gemini Vision) → { verified, suggested_name,
+// suggested_power_w, catalog_match, note, gemini } hoặc { error } khi Gemini lỗi/thiếu key.
+export async function recognizeAppliance(imageBase64, mimeType) {
+  const { data } = await apiClient.post("/appliances/recognize", {
+    image_base64: imageBase64,
+    mime_type: mimeType,
+  });
+  return data;
+}
+
 export async function optimize(params) {
   const { data } = await apiClient.post("/optimize", params);
   return data;

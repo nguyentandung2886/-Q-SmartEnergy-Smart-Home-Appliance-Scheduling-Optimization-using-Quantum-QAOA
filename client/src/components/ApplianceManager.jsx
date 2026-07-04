@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAppData } from "../AppData";
+import { recognizeAppliance } from "../api";
 import { computeCandidateHours } from "../scheduleUtils";
 
 // Read-only summary of the allowed run window for a self-scheduling appliance,
@@ -165,6 +166,49 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
   const [addedHint, setAddedHint] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({});
 
+  // Nhận diện thiết bị từ ảnh nhãn (Gemini Vision) — TÍNH NĂNG THÊM, song song nhập tay.
+  const fileInputRef = useRef(null);
+  const [recognizing, setRecognizing] = useState(false);
+  const [recognizeError, setRecognizeError] = useState("");
+  const [recognizeBadge, setRecognizeBadge] = useState(null); // { verified, note } | null
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.onerror = () => reject(new Error("Không đọc được ảnh"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleRecognize(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // cho phép chọn lại cùng ảnh
+    if (!file) return;
+    setRecognizeError("");
+    setRecognizeBadge(null);
+    setRecognizing(true);
+    try {
+      const base64 = await readFileAsBase64(file);
+      const res = await recognizeAppliance(base64, file.type || "image/jpeg");
+      if (res.error) {
+        setRecognizeError(res.error);
+        return;
+      }
+      // Tự động điền — user vẫn sửa tay được sau đó.
+      if (res.suggested_name) setNewName(res.suggested_name);
+      if (res.suggested_power_w != null) setNewPower(res.suggested_power_w);
+      setRecognizeBadge({ verified: res.verified, note: res.note });
+      if (res.suggested_power_w == null) {
+        setRecognizeError("Không đọc được công suất từ ảnh. Vui lòng nhập tay công suất.");
+      }
+    } catch {
+      setRecognizeError("Không thể nhận diện ảnh. Vui lòng thử lại hoặc nhập tay.");
+    } finally {
+      setRecognizing(false);
+    }
+  }
+
   const shown = appliances.filter((a) => (mode === "fixed" ? a.is_flexible : !a.is_flexible));
   const fixedGroups = groupFixed(shown);
 
@@ -295,6 +339,42 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
           className={"type-toggle" + (mode === "fixed" ? " type-toggle--flex" : "")}>
           Linh hoạt · tự lên lịch
         </button>
+      </div>
+
+      <div className="recognize-block" style={{ margin: "0.75rem 0" }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleRecognize}
+          style={{ display: "none" }}
+        />
+        <button
+          type="button"
+          className="btn-ink"
+          disabled={recognizing}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {recognizing ? "Đang nhận diện..." : "📷 Chụp / tải ảnh nhận diện"}
+        </button>
+        {recognizeBadge && (
+          <span
+            className="tag"
+            style={{
+              marginLeft: "0.6rem",
+              background: recognizeBadge.verified ? "var(--green, #16a34a)" : "var(--amber, #d97706)",
+              color: "#fff",
+            }}
+          >
+            {recognizeBadge.verified ? "✓ Đã xác minh theo catalog" : "⚠ [CẦN XÁC MINH]"}
+          </span>
+        )}
+        {recognizeError && (
+          <p className="add-error" style={{ color: "var(--error)", margin: "0.4rem 0 0" }}>
+            {recognizeError}
+          </p>
+        )}
       </div>
 
       {mode === "flex" ? (
