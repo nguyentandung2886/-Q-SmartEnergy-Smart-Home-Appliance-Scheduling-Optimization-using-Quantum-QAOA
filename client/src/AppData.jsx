@@ -315,12 +315,14 @@ export function AppDataProvider({ children }) {
         ...(isDrag ? { pinned_schedule: pinned } : {}),
       });
       setResult({ ...data, _runId: Date.now(), _forDate: selectedDate });
+      return true;
     } catch {
       setError("Lỗi khi tối ưu hóa. Kiểm tra backend đã chạy chưa?");
       // Kéo-thả thất bại: GanttEditor đã optimistic dời khối sang chỗ mới. Bơm lại một tham chiếu
       // schedule mới (cùng giá trị cũ) để effect reset trong GanttEditor chạy lại, đưa khối về đúng
       // vị trí trước khi kéo thay vì để nó nằm ở chỗ vừa thả.
       if (isDrag) setResult((prev) => prev && { ...prev, schedule: { ...prev.schedule } });
+      return false;
     } finally {
       setLoading(false);
       setReoptimizing(false);

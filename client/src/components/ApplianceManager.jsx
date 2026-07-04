@@ -277,8 +277,16 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
 
     setNewName(""); setNewPower(100); setNewQty(1);
     setWindows([{ start: 22, end: 6, duration: 4 }]);
-    setAddedHint(true);
-    runOptimize();
+    // Thiết bị đã được thêm ở trên (onAdd) — tự tối ưu chỉ là bước tiện lợi. runOptimize không
+    // ném lỗi (tự bắt bên trong) mà trả về true/false, nên await ở đây an toàn: 422 (vượt ngưỡng
+    // công suất / quá nhiều biến) hiện thông báo thân thiện thay vì để promise reject tràn màn hình.
+    const ok = await runOptimize();
+    if (ok) {
+      setAddedHint(true);
+    } else {
+      setAddedHint(false);
+      setFixedError("Đã thêm thiết bị, nhưng không thể tự tối ưu: tổng công suất có thể vượt ngưỡng cho phép — hãy kiểm tra lại công suất/số lượng thiết bị.");
+    }
   }
 
   return (
