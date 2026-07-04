@@ -26,20 +26,27 @@ if GEMINI_API_KEY:
 router = APIRouter(prefix="/appliances", tags=["appliances"])
 
 _UNVERIFIED_NOTE = "[CẦN XÁC MINH]"
+_ESTIMATED_NOTE = ("Ước tính theo loại thiết bị — không đọc được công suất từ ảnh, "
+                   "vui lòng kiểm tra lại nếu có tem")
 
 _VISION_PROMPT = (
-    "Bạn là trợ lý nhận diện thiết bị điện gia dụng. Ảnh này là NHÃN thông số (label/rating "
-    "plate) của một thiết bị điện. Hãy trích xuất thông tin và CHỈ trả về JSON đúng schema sau, "
-    "không giải thích thêm:\n"
+    "Bạn là trợ lý nhận diện thiết bị điện gia dụng. Ảnh có thể là NHÃN thông số (label/rating "
+    "plate) HOẶC ảnh mặt ngoài của thiết bị. Hãy trích xuất thông tin và CHỈ trả về JSON đúng "
+    "schema sau, không giải thích thêm.\n"
+    "QUY TẮC QUAN TRỌNG — 2 field độc lập:\n"
+    "  1. device_type: LUÔN cố nhận diện loại thiết bị dựa vào HÌNH DÁNG / KIỂU MÁY, kể cả khi "
+    "KHÔNG thấy tem công suất (vd ảnh mặt trước TV, laptop, quạt...).\n"
+    "  2. power_w: CHỈ điền nếu ĐỌC ĐƯỢC RÕ con số trên text/tem trong ảnh. TUYỆT ĐỐI KHÔNG "
+    "được suy đoán/ước lượng công suất từ trí nhớ. Không thấy số công suất trên ảnh → power_w = null.\n"
+    "Schema:\n"
     '{"device_type": <tên loại thiết bị bằng tiếng Việt, vd "Tủ lạnh", "Điều hòa", "Máy giặt", '
-    '"Nồi cơm điện", "Lò vi sóng", "Bình nước nóng", "Quạt điện", "Bếp điện", "Tivi">, '
+    '"Nồi cơm điện", "Lò vi sóng", "Bình nước nóng", "Quạt điện", "Bếp điện", "Tivi", hoặc null '
+    "nếu không nhận ra là thiết bị điện>, "
     '"brand": <hãng nếu thấy, vd "Panasonic", "Daikin", ngược lại null>, '
-    '"power_w": <công suất tính bằng WATT dạng số. Nếu nhãn ghi kW thì nhân 1000. Nếu chỉ có '
-    "điện áp (V) và dòng (A) thì tính power_w = V * A>, "
+    '"power_w": <công suất WATT dạng số CHỈ khi đọc được từ ảnh. Nhãn ghi kW thì nhân 1000; chỉ '
+    "có điện áp (V) và dòng (A) thì power_w = V * A. Không đọc được → null. KHÔNG đoán bừa>, "
     '"voltage": <điện áp danh định dạng số, vd 220, hoặc null>, '
-    '"confidence": <độ tin cậy 0..1>}\n'
-    "Nếu không đọc được công suất, đặt power_w = null. Nếu ảnh không phải nhãn thiết bị điện, "
-    'đặt device_type = null.'
+    '"confidence": <độ tin cậy nhận diện device_type, 0..1>}'
 )
 
 
@@ -173,12 +180,15 @@ def recognize_appliance(
         "confidence": extracted.get("confidence"),
     }
 
-    match = match_catalog(device_type, power_w if isinstance(power_w, (int, float)) else None)
-    if match is not None:
-        # Ưu tiên số công suất ĐÃ XÁC MINH của catalog thay vì số Gemini đọc từ ảnh.
+    has_power = isinstance(power_w, (int, float))
+    match = match_catalog(device_type, power_w if has_power else None)
+
+    if has_power and match is not None:
+        # Case XANH (đã test thật): đọc được công suất + khớp catalog → dùng số ĐÃ XÁC MINH.
         return {
             "gemini": gemini,
             "verified": True,
+            "estimated": False,
             "suggested_name": match.name,
             "suggested_power_w": match.power_w,
             "catalog_match": {
@@ -191,12 +201,44 @@ def recognize_appliance(
             "note": None,
         }
 
-    # Không khớp catalog → giữ số Gemini kèm cảnh báo cần xác minh.
+    if has_power:
+        # Case VÀNG (đã test thật): đọc được công suất nhưng không khớp catalog → giữ số Gemini.
+        return {
+            "gemini": gemini,
+            "verified": False,
+            "estimated": False,
+            "suggested_name": device_type,
+            "suggested_power_w": power_w,
+            "catalog_match": None,
+            "note": _UNVERIFIED_NOTE,
+        }
+
+    if match is not None:
+        # Case MỚI (ước tính): không đọc được công suất từ ảnh nhưng nhận diện được LOẠI thiết bị
+        # → lấy công suất điển hình từ catalog (KHÔNG phải LLM đoán), badge riêng "ước tính".
+        return {
+            "gemini": gemini,
+            "verified": False,
+            "estimated": True,
+            "suggested_name": match.name,
+            "suggested_power_w": match.power_w,
+            "catalog_match": {
+                "name": match.name,
+                "power_w": match.power_w,
+                "duration_hours": match.duration_hours,
+                "is_flexible": match.is_flexible,
+                "verified": False,
+            },
+            "note": _ESTIMATED_NOTE,
+        }
+
+    # Không đọc được công suất và cũng không nhận ra loại → fallback nhập tay như cũ.
     return {
         "gemini": gemini,
         "verified": False,
+        "estimated": False,
         "suggested_name": device_type,
-        "suggested_power_w": power_w if isinstance(power_w, (int, float)) else None,
+        "suggested_power_w": None,
         "catalog_match": None,
         "note": _UNVERIFIED_NOTE,
     }

@@ -68,8 +68,46 @@ def test_recognize_no_match_unverified(client, auth_headers, monkeypatch):
         ctx.stop()
     body = res.json()
     assert body["verified"] is False
+    assert body["estimated"] is False
     assert body["suggested_power_w"] == 1800
     assert body["note"] == "[CẦN XÁC MINH]"
+
+
+def test_recognize_no_power_estimates_from_type(client, auth_headers, monkeypatch):
+    """Ảnh không lộ tem (power_w=null) nhưng nhận ra loại → lấy công suất điển hình từ catalog,
+    estimated=True (badge ước tính), KHÔNG phải verified."""
+    from api import recognize_router
+    monkeypatch.setattr(recognize_router, "GEMINI_API_KEY", "fake-key")
+    ctx = _mock_gemini({"device_type": "Tivi", "power_w": None, "confidence": 0.9})
+    try:
+        res = client.post("/appliances/recognize",
+                          json={"image_base64": _FAKE_IMG},
+                          headers=auth_headers("recog_est"))
+    finally:
+        ctx.stop()
+    body = res.json()
+    assert body["verified"] is False
+    assert body["estimated"] is True
+    assert body["suggested_name"] == "Tivi"
+    assert body["suggested_power_w"] == 100  # công suất điển hình từ catalog
+    assert "Ước tính" in body["note"]
+
+
+def test_recognize_no_power_no_type_falls_back_to_manual(client, auth_headers, monkeypatch):
+    """Không đọc được công suất và cũng không nhận ra loại → power=null để frontend nhập tay."""
+    from api import recognize_router
+    monkeypatch.setattr(recognize_router, "GEMINI_API_KEY", "fake-key")
+    ctx = _mock_gemini({"device_type": None, "power_w": None, "confidence": 0.2})
+    try:
+        res = client.post("/appliances/recognize",
+                          json={"image_base64": _FAKE_IMG},
+                          headers=auth_headers("recog_none"))
+    finally:
+        ctx.stop()
+    body = res.json()
+    assert body["verified"] is False
+    assert body["estimated"] is False
+    assert body["suggested_power_w"] is None
 
 
 def test_recognize_missing_key_returns_error(client, auth_headers, monkeypatch):

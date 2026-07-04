@@ -198,7 +198,7 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
       // Tự động điền — user vẫn sửa tay được sau đó.
       if (res.suggested_name) setNewName(res.suggested_name);
       if (res.suggested_power_w != null) setNewPower(res.suggested_power_w);
-      setRecognizeBadge({ verified: res.verified, note: res.note });
+      setRecognizeBadge({ verified: res.verified, estimated: res.estimated, note: res.note });
       if (res.suggested_power_w == null) {
         setRecognizeError("Không đọc được công suất từ ảnh. Vui lòng nhập tay công suất.");
       }
@@ -363,11 +363,19 @@ export default function ApplianceManager({ appliances, totalKwh, onSave, onDelet
             className="tag"
             style={{
               marginLeft: "0.6rem",
-              background: recognizeBadge.verified ? "var(--green, #16a34a)" : "var(--amber, #d97706)",
+              background: recognizeBadge.verified
+                ? "var(--green, #16a34a)"
+                : recognizeBadge.estimated
+                ? "var(--blue, #2563eb)"
+                : "var(--amber, #d97706)",
               color: "#fff",
             }}
           >
-            {recognizeBadge.verified ? "✓ Đã xác minh theo catalog" : "⚠ [CẦN XÁC MINH]"}
+            {recognizeBadge.verified
+              ? "✓ Đã xác minh theo catalog"
+              : recognizeBadge.estimated
+              ? "⚠ Ước tính theo loại thiết bị — kiểm tra lại nếu có tem"
+              : "⚠ [CẦN XÁC MINH]"}
           </span>
         )}
         {recognizeError && (
