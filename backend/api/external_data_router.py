@@ -24,6 +24,7 @@ hostname resolves to. Two easy-to-miss follow-on vectors are guarded too:
 import ipaddress
 import json
 import os
+import re
 import socket
 from urllib.parse import urlparse, urlunparse
 
@@ -186,8 +187,27 @@ def _build_summarize_prompt(data: dict) -> str:
         "KHÔNG ĐƯỢC PHÉP: tự thêm SỐ LIỆU, ĐỊA ĐIỂM, THỜI GIAN, hay bất kỳ TRƯỜNG DỮ LIỆU nào "
         "không có trong JSON được cung cấp.\n\n"
         "Nếu JSON không chứa đủ ngữ cảnh để liên hệ tới bất kỳ kiến thức phổ thông nào liên quan "
-        "đến việc dùng điện, trả lời đúng câu 'Không đủ thông tin để đưa gợi ý cụ thể.'"
+        "đến việc dùng điện, trả lời đúng câu 'Không đủ thông tin để đưa gợi ý cụ thể.'\n\n"
+        "Trả lời bằng văn bản thuần túy, KHÔNG dùng markdown (không dùng dấu **, không dùng "
+        "dấu đầu dòng, không dùng tiêu đề #)."
     )
+
+
+_MARKDOWN_HEADING_RE = re.compile(r"^[ \t]*#{1,6}\s*", re.MULTILINE)
+_MARKDOWN_BULLET_RE = re.compile(r"^[ \t]*[*\-]\s+", re.MULTILINE)
+
+
+def _strip_markdown(text: str) -> str:
+    """Belt-and-suspenders for the plain-text instruction in _build_summarize_prompt(): LLMs
+    don't always comply consistently (observed: bold-ing an inline label like
+    "**Gợi ý hành động:**" while leaving the rest of the sentence as plain text), and the
+    frontend renders this in a plain <p> with no markdown parser, so a literal '**' would
+    leak through. Strips the markdown markers Gemini reaches for most: heading #, bullet
+    -/*, and bold/italic * — not a full markdown parser, just the common offenders."""
+    text = _MARKDOWN_HEADING_RE.sub("", text)
+    text = _MARKDOWN_BULLET_RE.sub("", text)
+    text = text.replace("*", "")
+    return text.strip()
 
 
 @router.post("/summarize")
@@ -206,7 +226,7 @@ def summarize_external_data(
             _build_summarize_prompt(payload.data),
             request_options={"timeout": SUMMARIZE_TIMEOUT_SECONDS},
         )
-        summary = (response.text or "").strip()
+        summary = _strip_markdown(response.text or "")
         if not summary:
             return {"ok": False}
         return {"ok": True, "summary": summary}

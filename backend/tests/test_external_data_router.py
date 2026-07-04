@@ -234,11 +234,66 @@ class TestBuildSummarizePrompt:
         assert "KHÔNG ĐƯỢC PHÉP" in prompt
         assert "TRƯỜNG DỮ LIỆU" in prompt
 
+    def test_instructs_plain_text_no_markdown(self):
+        prompt = external_data_router._build_summarize_prompt({"aqi": 180})
+        assert "KHÔNG dùng markdown" in prompt
+
+
+class TestStripMarkdown:
+    def test_strips_inline_bold_label(self):
+        # The exact case observed in production: Gemini bolds an inline label while leaving
+        # the rest of the sentence plain.
+        text = "Chất lượng không khí rất tốt. **Gợi ý hành động:** hãy mở cửa sổ thông gió."
+        result = external_data_router._strip_markdown(text)
+        assert "*" not in result
+        assert "Gợi ý hành động:" in result
+        assert "hãy mở cửa sổ thông gió." in result
+
+    def test_strips_heading_and_bullet_markers(self):
+        text = "## Tóm tắt\n- Chỉ số AQI là 40\n* Mức tốt, an toàn để dùng điện bình thường"
+        result = external_data_router._strip_markdown(text)
+        assert "#" not in result
+        assert not result.startswith("- ")
+        assert "Tóm tắt" in result
+        assert "Chỉ số AQI là 40" in result
+
+    def test_plain_text_passes_through_unchanged(self):
+        text = "Chỉ số chất lượng không khí là 40, ở mức tốt."
+        assert external_data_router._strip_markdown(text) == text
+
 
 class TestSummarizeEndpoint:
     def test_requires_auth(self, client):
         response = client.post("/api/external-data/summarize", json={"data": {"aqi": 180}})
         assert response.status_code == 401
+
+    def test_markdown_in_gemini_response_is_stripped_before_reaching_client(
+        self, client, auth_headers, monkeypatch
+    ):
+        monkeypatch.setattr(external_data_router, "GEMINI_API_KEY", "fake-key-for-test")
+
+        mock_response = MagicMock()
+        mock_response.text = (
+            "Chất lượng không khí rất tốt. **Gợi ý hành động:** hãy mở cửa sổ thông gió."
+        )
+
+        with patch("api.external_data_router.genai.GenerativeModel") as mock_cls:
+            mock_model = MagicMock()
+            mock_cls.return_value = mock_model
+            mock_model.generate_content.return_value = mock_response
+
+            headers = auth_headers("summarizeuser4")
+            response = client.post(
+                "/api/external-data/summarize",
+                json={"data": {"aqi": 40}},
+                headers=headers,
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert "*" not in body["summary"]
+        assert "Gợi ý hành động:" in body["summary"]
 
     def test_returns_summary_from_mocked_gemini(self, client, auth_headers, monkeypatch):
         monkeypatch.setattr(external_data_router, "GEMINI_API_KEY", "fake-key-for-test")
